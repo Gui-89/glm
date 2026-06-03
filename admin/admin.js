@@ -27,7 +27,7 @@ const FIREBASE_CONFIG = {
 
 // ✏️  ADICIONE AQUI os emails Google autorizados
 const ALLOWED_EMAILS = [
-  'seuemail@gmail.com',   // <- substitua pelo seu email
+  'guigas83@gmail.com',   // <- substitua pelo seu email
   // 'outro@gmail.com',   // adicione mais se necessário
 ];
 
