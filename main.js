@@ -1,15 +1,16 @@
-/* js/main.js  (type="module")
+/* js/main.js
+   ✅ CORRIGIDO: removido type="module" — agora é script clássico
    – Gerencia tema (decor / creative)
    – Escuta Firestore em tempo real e renderiza os cards
    – Liga hover dos cards ao ThreePreview
 */
 
 /* ═══ STATE ════════════════════════════════════════════ */
-let currentTheme = 'decor';
-let unsubscribe  = null;
+var currentTheme = 'decor';
+var unsubscribe  = null;
 
 /* ═══ THEME ════════════════════════════════════════════ */
-const THEME = {
+var THEME = {
   decor: {
     eyebrow:    'ESCOLHA SUA EXPERIÊNCIA',
     eyeClass:   'eye-decor',
@@ -44,9 +45,9 @@ const THEME = {
 
 function applyTheme(t) {
   currentTheme = t;
-  const T = THEME[t];
+  var T = THEME[t];
 
-  const ey = document.getElementById('eyebrow');
+  var ey = document.getElementById('eyebrow');
   ey.textContent = T.eyebrow;
   ey.className   = 'glm-eyebrow ' + T.eyeClass;
 
@@ -57,15 +58,15 @@ function applyTheme(t) {
 
   document.getElementById('dl1').className  = 'dline ' + T.divider.line;
   document.getElementById('dl2').className  = 'dline ' + T.divider.line;
-  const dtxt = document.getElementById('dtxt');
+  var dtxt = document.getElementById('dtxt');
   dtxt.className   = 'dtext ' + T.divider.text;
   dtxt.textContent = T.divText;
 
   document.getElementById('live-dot').className    = 'live-dot ' + T.dot;
   document.getElementById('live-text').textContent = T.liveText;
 
-  window.heroCanvas?.setTheme(t);
-  window.ThreePreview?.setTheme(t);
+  if (window.heroCanvas) window.heroCanvas.setTheme(t);
+  if (window.ThreePreview) window.ThreePreview.setTheme(t);
 
   // Re-renderiza cards com novo tema
   if (window.__lastProducts) renderGrid(window.__lastProducts);
@@ -78,42 +79,41 @@ function formatPrice(v) {
 }
 
 function makeCard(prod, idx) {
-  const T = THEME[currentTheme];
-  const card = document.createElement('div');
+  var T = THEME[currentTheme];
+  var card = document.createElement('div');
   card.className = 'card ' + T.cardClass + ' fade-in';
   card.style.animationDelay = (idx * 55) + 'ms';
 
-  const imgHtml = prod.imageUrl
-    ? `<img src="${prod.imageUrl}" alt="${prod.name}" loading="lazy" />`
-    : `<span class="emoji-fallback">${prod.emoji || '📦'}</span>`;
+  var imgHtml = prod.imageUrl
+    ? '<img src="' + prod.imageUrl + '" alt="' + prod.name + '" loading="lazy" />'
+    : '<span class="emoji-fallback">' + (prod.emoji || '📦') + '</span>';
 
-  const badgeHtml = prod.badge
-    ? `<span class="badge ${T.badgeClass}">${prod.badge}</span>` : '';
+  var badgeHtml = prod.badge
+    ? '<span class="badge ' + T.badgeClass + '">' + prod.badge + '</span>' : '';
 
-  card.innerHTML = `
-    <div class="card-img ${T.ciClass}">
-      ${imgHtml}
-      ${badgeHtml}
-    </div>
-    <div class="card-info">
-      <div class="card-name ${T.nameClass}">${prod.name}</div>
-      <div class="card-price ${T.priceClass}">${formatPrice(prod.price)}</div>
-      ${prod.description ? `<div class="card-desc">${prod.description}</div>` : ''}
-    </div>`;
+  card.innerHTML =
+    '<div class="card-img ' + T.ciClass + '">' +
+      imgHtml + badgeHtml +
+    '</div>' +
+    '<div class="card-info">' +
+      '<div class="card-name ' + T.nameClass + '">' + prod.name + '</div>' +
+      '<div class="card-price ' + T.priceClass + '">' + formatPrice(prod.price) + '</div>' +
+      (prod.description ? '<div class="card-desc">' + prod.description + '</div>' : '') +
+    '</div>';
 
   // Three.js hover
-  let hoverTimer;
-  card.addEventListener('mouseenter', e => {
-    hoverTimer = setTimeout(() => {
-      window.ThreePreview?.show(e.clientX, e.clientY, idx);
+  var hoverTimer;
+  card.addEventListener('mouseenter', function(e) {
+    hoverTimer = setTimeout(function() {
+      if (window.ThreePreview) window.ThreePreview.show(e.clientX, e.clientY, idx);
     }, 180);
   });
-  card.addEventListener('mousemove', e => {
-    window.ThreePreview?.move(e.clientX, e.clientY);
+  card.addEventListener('mousemove', function(e) {
+    if (window.ThreePreview) window.ThreePreview.move(e.clientX, e.clientY);
   });
-  card.addEventListener('mouseleave', () => {
+  card.addEventListener('mouseleave', function() {
     clearTimeout(hoverTimer);
-    window.ThreePreview?.hide();
+    if (window.ThreePreview) window.ThreePreview.hide();
   });
 
   return card;
@@ -121,9 +121,9 @@ function makeCard(prod, idx) {
 
 function renderGrid(products) {
   window.__lastProducts = products;
-  const grid    = document.getElementById('grid');
-  const loading = document.getElementById('loading-state');
-  const empty   = document.getElementById('empty-state');
+  var grid    = document.getElementById('grid');
+  var loading = document.getElementById('loading-state');
+  var empty   = document.getElementById('empty-state');
 
   loading.style.display = 'none';
 
@@ -136,7 +136,7 @@ function renderGrid(products) {
   empty.style.display = 'none';
   grid.style.display  = 'grid';
   grid.innerHTML      = '';
-  products.forEach((p, i) => grid.appendChild(makeCard(p, i)));
+  products.forEach(function(p, i) { grid.appendChild(makeCard(p, i)); });
 }
 
 /* ═══ FIRESTORE ════════════════════════════════════════ */
@@ -146,25 +146,26 @@ function subscribeFirestore() {
     return;
   }
 
-  const db      = window.__db;
-  const col     = window.__fsCollection;
-  const snap    = window.__fsOnSnapshot;
-  const q       = window.__fsQuery;
-  const orderBy = window.__fsOrderBy;
+  var db      = window.__db;
+  var col     = window.__fsCollection;
+  var snap    = window.__fsOnSnapshot;
+  var q       = window.__fsQuery;
+  var orderBy = window.__fsOrderBy;
 
   if (unsubscribe) unsubscribe();
 
   try {
-    const ref = q(col(db, 'products'), orderBy('createdAt', 'desc'));
-    unsubscribe = snap(ref, (snapshot) => {
-      const products = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      // ✅ CORRIGIDO: filtro de categoria por tema
-      const filtered = products.filter(p => {
+    var ref = q(col(db, 'products'), orderBy('createdAt', 'desc'));
+    unsubscribe = snap(ref, function(snapshot) {
+      var products = snapshot.docs.map(function(d) {
+        return Object.assign({ id: d.id }, d.data());
+      });
+      var filtered = products.filter(function(p) {
         if (currentTheme === 'creative') return p.category === 'creative';
         return p.category === 'decor' || !p.category;
       });
       renderGrid(filtered.length ? filtered : products);
-    }, (err) => {
+    }, function(err) {
       console.warn('Firestore erro:', err);
       renderGrid(DEMO_PRODUCTS);
     });
@@ -175,39 +176,46 @@ function subscribeFirestore() {
 }
 
 /* ═══ DEMO FALLBACK ════════════════════════════════════ */
-const DEMO_PRODUCTS = [
+var DEMO_PRODUCTS = [
   { id:'1', name:'Quadro Minimalista', price:189, badge:'NOVO', emoji:'🖼️',
-    description:'Arte exclusiva para sua sala' },
+    description:'Arte exclusiva para sua sala', category:'decor' },
   { id:'2', name:'Vaso Orgânico',      price:97,  badge:'TOP',  emoji:'🏺',
-    description:'Cerâmica artesanal brasileira' },
+    description:'Cerâmica artesanal brasileira', category:'decor' },
   { id:'3', name:'Luminária Arc',      price:345, emoji:'💡',
-    description:'Design escandinavo contemporâneo' },
+    description:'Design escandinavo contemporâneo', category:'decor' },
   { id:'4', name:'Modelo 3D #01',      price:220, badge:'3D',   emoji:'💎',
-    description:'Asset digital high-poly' },
+    description:'Asset digital high-poly', category:'creative' },
   { id:'5', name:'Render Pack',        price:499, badge:'PRO',  emoji:'🎮',
-    description:'10 cenas prontas para usar' },
+    description:'10 cenas prontas para usar', category:'creative' },
   { id:'6', name:'Tapete Bouclé',      price:278, emoji:'🪨',
-    description:'Textura tátil única, 160×230cm' },
+    description:'Textura tátil única, 160×230cm', category:'decor' },
 ];
 
-/* ═══ GLOBAL API ═══════════════════════════════════════ */
+/* ═══ GLOBAL API — ✅ exposta antes do init ════════════ */
 window.GLM = {
-  setTheme(t) { applyTheme(t); }
+  setTheme: function(t) { applyTheme(t); }
 };
 
 /* ═══ INIT ═════════════════════════════════════════════ */
 function init() {
+  // ✅ Liga os botões via addEventListener (mais robusto que onclick inline)
+  var btnD = document.getElementById('btn-d');
+  var btnC = document.getElementById('btn-c');
+  if (btnD) btnD.addEventListener('click', function() { applyTheme('decor'); });
+  if (btnC) btnC.addEventListener('click', function() { applyTheme('creative'); });
+
   applyTheme('decor');
 
-  // ✅ CORRIGIDO: começa demo imediatamente, substitui se Firebase responder
+  // ✅ Renderiza demo imediatamente — sem tela de loading travada
   renderGrid(DEMO_PRODUCTS);
 
-  // Tenta Firebase
+  // Tenta Firebase (se já inicializado pelo module)
   if (window.__db) {
     subscribeFirestore();
   } else {
-    window.addEventListener('fs-ready', () => {
+    window.addEventListener('fs-ready', function() {
       if (window.__db) subscribeFirestore();
+      // se __db ainda undefined, DEMO já está visível — nada a fazer
     }, { once: true });
   }
 }
