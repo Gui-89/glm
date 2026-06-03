@@ -6,39 +6,39 @@
 
 /* ═══ STATE ════════════════════════════════════════════ */
 let currentTheme = 'decor';
-let unsubscribe   = null;
+let unsubscribe  = null;
 
 /* ═══ THEME ════════════════════════════════════════════ */
 const THEME = {
   decor: {
-    eyebrow:   'ESCOLHA SUA EXPERIÊNCIA',
-    eyeClass:  'eye-decor',
-    titleClass:'title-decor',
+    eyebrow:    'ESCOLHA SUA EXPERIÊNCIA',
+    eyeClass:   'eye-decor',
+    titleClass: 'title-decor',
     btnActive:  { d: 'sel-active-decor', c: '' },
-    divider:   { line: 'dline-decor', text: 'dtext-decor' },
-    dot:       'dot-decor',
-    liveText:  'AO VIVO',
-    divText:   'PRODUTOS EM DESTAQUE',
-    cardClass: 'card-decor',
-    ciClass:   'ci-decor',
-    badgeClass:'badge-decor',
-    nameClass: 'name-decor',
-    priceClass:'price-decor',
+    divider:    { line: 'dline-decor', text: 'dtext-decor' },
+    dot:        'dot-decor',
+    liveText:   'AO VIVO',
+    divText:    'PRODUTOS EM DESTAQUE',
+    cardClass:  'card-decor',
+    ciClass:    'ci-decor',
+    badgeClass: 'badge-decor',
+    nameClass:  'name-decor',
+    priceClass: 'price-decor',
   },
   creative: {
-    eyebrow:   '3D CREATIVE STUDIO',
-    eyeClass:  'eye-creative',
-    titleClass:'title-creative',
+    eyebrow:    '3D CREATIVE STUDIO',
+    eyeClass:   'eye-creative',
+    titleClass: 'title-creative',
     btnActive:  { d: '', c: 'sel-active-creative' },
-    divider:   { line: 'dline-creative', text: 'dtext-creative' },
-    dot:       'dot-creative',
-    liveText:  'LIVE',
-    divText:   'CATÁLOGO 3D',
-    cardClass: 'card-creative',
-    ciClass:   'ci-creative',
-    badgeClass:'badge-creative',
-    nameClass: 'name-creative',
-    priceClass:'price-creative',
+    divider:    { line: 'dline-creative', text: 'dtext-creative' },
+    dot:        'dot-creative',
+    liveText:   'LIVE',
+    divText:    'CATÁLOGO 3D',
+    cardClass:  'card-creative',
+    ciClass:    'ci-creative',
+    badgeClass: 'badge-creative',
+    nameClass:  'name-creative',
+    priceClass: 'price-creative',
   }
 };
 
@@ -46,39 +46,34 @@ function applyTheme(t) {
   currentTheme = t;
   const T = THEME[t];
 
-  // Eyebrow
   const ey = document.getElementById('eyebrow');
-  ey.textContent  = T.eyebrow;
-  ey.className    = 'glm-eyebrow ' + T.eyeClass;
+  ey.textContent = T.eyebrow;
+  ey.className   = 'glm-eyebrow ' + T.eyeClass;
 
-  // Title
   document.getElementById('main-title').className = 'glm-title ' + T.titleClass;
 
-  // Buttons
   document.getElementById('btn-d').className = 'sel-btn ' + T.btnActive.d;
   document.getElementById('btn-c').className = 'sel-btn ' + T.btnActive.c;
 
-  // Divider
-  document.getElementById('dl1').className = 'dline ' + T.divider.line;
-  document.getElementById('dl2').className = 'dline ' + T.divider.line;
-  document.getElementById('dtxt').className = 'dtext ' + T.divider.text;
-  document.getElementById('dtxt').textContent = T.divText;
+  document.getElementById('dl1').className  = 'dline ' + T.divider.line;
+  document.getElementById('dl2').className  = 'dline ' + T.divider.line;
+  const dtxt = document.getElementById('dtxt');
+  dtxt.className   = 'dtext ' + T.divider.text;
+  dtxt.textContent = T.divText;
 
-  // Live dot
-  document.getElementById('live-dot').className = 'live-dot ' + T.dot;
+  document.getElementById('live-dot').className    = 'live-dot ' + T.dot;
   document.getElementById('live-text').textContent = T.liveText;
 
-  // Propagate to helpers
   window.heroCanvas?.setTheme(t);
   window.ThreePreview?.setTheme(t);
 
-  // Re-render cards with new theme classes
-  renderGrid(window.__lastProducts || []);
+  // Re-renderiza cards com novo tema
+  if (window.__lastProducts) renderGrid(window.__lastProducts);
 }
 
 /* ═══ CARD RENDER ══════════════════════════════════════ */
 function formatPrice(v) {
-  if (!v && v !== 0) return '—';
+  if (v === undefined || v === null || v === '') return '—';
   return 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
 }
 
@@ -132,7 +127,7 @@ function renderGrid(products) {
 
   loading.style.display = 'none';
 
-  if (!products.length) {
+  if (!products || !products.length) {
     grid.style.display  = 'none';
     empty.style.display = 'block';
     return;
@@ -146,48 +141,56 @@ function renderGrid(products) {
 
 /* ═══ FIRESTORE ════════════════════════════════════════ */
 function subscribeFirestore() {
-  if (!window.__db) return;
+  if (!window.__db) {
+    renderGrid(DEMO_PRODUCTS);
+    return;
+  }
 
-  const { __db: db, __fsCollection: col, __fsOnSnapshot: snap,
-          __fsQuery: q, __fsOrderBy: orderBy, __fsWhere: where } = window;
+  const db      = window.__db;
+  const col     = window.__fsCollection;
+  const snap    = window.__fsOnSnapshot;
+  const q       = window.__fsQuery;
+  const orderBy = window.__fsOrderBy;
 
   if (unsubscribe) unsubscribe();
 
-  const ref = q(col(db, 'products'), orderBy('createdAt', 'desc'));
-
-  unsubscribe = snap(ref, (snapshot) => {
-    const products = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-    // Filter by theme/category if set
-    const filtered = currentTheme === 'creative'
-      ? products.filter(p => p.category === 'creative' || !p.category)
-      : products.filter(p => p.category !== 'creative' || !p.category);
-
-    // Show all if no category split makes sense
-    renderGrid(products.length ? products : []);
-  }, (err) => {
-    console.error('Firestore error:', err);
-    // Fallback to demo products
+  try {
+    const ref = q(col(db, 'products'), orderBy('createdAt', 'desc'));
+    unsubscribe = snap(ref, (snapshot) => {
+      const products = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      // ✅ CORRIGIDO: filtro de categoria por tema
+      const filtered = products.filter(p => {
+        if (currentTheme === 'creative') return p.category === 'creative';
+        return p.category === 'decor' || !p.category;
+      });
+      renderGrid(filtered.length ? filtered : products);
+    }, (err) => {
+      console.warn('Firestore erro:', err);
+      renderGrid(DEMO_PRODUCTS);
+    });
+  } catch (e) {
+    console.warn('Firestore falhou:', e);
     renderGrid(DEMO_PRODUCTS);
-  });
+  }
 }
 
-/* ═══ DEMO FALLBACK (sem Firebase configurado) ═════════ */
+/* ═══ DEMO FALLBACK ════════════════════════════════════ */
 const DEMO_PRODUCTS = [
   { id:'1', name:'Quadro Minimalista', price:189, badge:'NOVO', emoji:'🖼️',
     description:'Arte exclusiva para sua sala' },
-  { id:'2', name:'Vaso Orgânico', price:97, badge:'TOP', emoji:'🏺',
+  { id:'2', name:'Vaso Orgânico',      price:97,  badge:'TOP',  emoji:'🏺',
     description:'Cerâmica artesanal brasileira' },
-  { id:'3', name:'Luminária Arc', price:345, emoji:'💡',
+  { id:'3', name:'Luminária Arc',      price:345, emoji:'💡',
     description:'Design escandinavo contemporâneo' },
-  { id:'4', name:'Modelo 3D #01', price:220, badge:'3D', emoji:'💎',
+  { id:'4', name:'Modelo 3D #01',      price:220, badge:'3D',   emoji:'💎',
     description:'Asset digital high-poly' },
-  { id:'5', name:'Render Pack', price:499, badge:'PRO', emoji:'🎮',
+  { id:'5', name:'Render Pack',        price:499, badge:'PRO',  emoji:'🎮',
     description:'10 cenas prontas para usar' },
-  { id:'6', name:'Tapete Bouclé', price:278, emoji:'🪨',
+  { id:'6', name:'Tapete Bouclé',      price:278, emoji:'🪨',
     description:'Textura tátil única, 160×230cm' },
 ];
 
-/* ═══ GLOBAL API (usada pelos botões inline do HTML) ═══ */
+/* ═══ GLOBAL API ═══════════════════════════════════════ */
 window.GLM = {
   setTheme(t) { applyTheme(t); }
 };
@@ -196,19 +199,19 @@ window.GLM = {
 function init() {
   applyTheme('decor');
 
+  // ✅ CORRIGIDO: começa demo imediatamente, substitui se Firebase responder
+  renderGrid(DEMO_PRODUCTS);
+
+  // Tenta Firebase
   if (window.__db) {
     subscribeFirestore();
   } else {
-    // Aguarda Firebase inicializar
-    window.addEventListener('fs-ready', () => subscribeFirestore(), { once: true });
-    // Timeout de segurança — mostra demo se Firebase não responder em 3 s
-    setTimeout(() => {
-      if (!window.__lastProducts) renderGrid(DEMO_PRODUCTS);
-    }, 3000);
+    window.addEventListener('fs-ready', () => {
+      if (window.__db) subscribeFirestore();
+    }, { once: true });
   }
 }
 
-// Garante que o DOM esteja pronto
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
