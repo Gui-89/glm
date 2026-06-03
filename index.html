@@ -5,10 +5,19 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>GLM Universe</title>
 <link rel="stylesheet" href="style.css"/>
-<!-- Three.js no <head> com defer: estará pronto antes do main.js rodar -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
-<!-- main.js importa Firebase e contém canvas-hero + threejs-preview inlined -->
-<!-- defer garante que DOM + CSS estão prontos, e roda APÓS Three.js defer -->
+
+<!-- importmap: resolve "three" para o CDN dentro do módulo -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js",
+    "firebase/app":       "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"
+  }
+}
+</script>
+
+<!-- único script — importa tudo via importmap, sem dependência de ordem -->
 <script type="module" src="js/main.js"></script>
 </head>
 <body>
