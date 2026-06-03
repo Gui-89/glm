@@ -5,12 +5,15 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>GLM Universe</title>
 <link rel="stylesheet" href="style.css"/>
-<!-- Three.js (clássico, carrega antes de tudo) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- Three.js no <head> com defer: estará pronto antes do main.js rodar -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
+<!-- main.js importa Firebase e contém canvas-hero + threejs-preview inlined -->
+<!-- defer garante que DOM + CSS estão prontos, e roda APÓS Three.js defer -->
+<script type="module" src="js/main.js"></script>
 </head>
 <body>
 <div id="root" class="glm-root">
-  <!-- ═══ HERO ═══ -->
+
   <section class="hero" id="hero">
     <canvas id="hero-canvas"></canvas>
     <div class="vignette"></div>
@@ -22,13 +25,12 @@
         <button class="sel-btn" id="btn-c">✦ 3D CREATIVE</button>
       </div>
     </div>
-    <div class="live-badge" id="live-badge">
+    <div class="live-badge">
       <div class="live-dot dot-decor" id="live-dot"></div>
       <span id="live-text">AO VIVO</span>
     </div>
   </section>
 
-  <!-- ═══ PRODUTOS ═══ -->
   <section class="content">
     <div class="divider">
       <div class="dline dline-decor" id="dl1"></div>
@@ -46,23 +48,14 @@
     <div class="grid" id="grid" style="display:none"></div>
   </section>
 
-  <!-- ═══ FOOTER ═══ -->
   <footer class="footer">
     <span>GLM Universe © 2025</span>
     <a href="admin/index.html" class="footer-admin-link">⚙ Admin</a>
   </footer>
 </div>
 
-<!-- Tooltip Three.js -->
 <div id="preview-3d" style="display:none;position:fixed;pointer-events:none;z-index:999;">
   <canvas id="preview-canvas" width="160" height="160"></canvas>
 </div>
-
-<!-- Scripts clássicos primeiro (sem dependência de módulo) -->
-<script src="js/canvas-hero.js"></script>
-<script src="js/threejs-preview.js"></script>
-
-<!-- main.js como módulo — ele mesmo importa Firebase e inicializa tudo -->
-<script type="module" src="js/main.js"></script>
 </body>
 </html>
