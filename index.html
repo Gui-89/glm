@@ -5,40 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>GLM Universe</title>
 <link rel="stylesheet" href="style.css"/>
-<!-- Firebase v10 (modular CDN) -->
-<script type="module">
-  import { initializeApp }
-    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, collection, onSnapshot, query, orderBy }
-    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
-  // ✅ Importa config — troque pelos seus dados quando tiver o Firebase pronto
-  // import { FIREBASE_CONFIG } from "./js/firebase-config.js";
-
-  const FIREBASE_CONFIG = {
-    apiKey:            "PLACEHOLDER",
-    authDomain:        "PLACEHOLDER.firebaseapp.com",
-    projectId:         "PLACEHOLDER",
-    storageBucket:     "PLACEHOLDER.appspot.com",
-    messagingSenderId: "000000000",
-    appId:             "1:000000000:web:000000"
-  };
-
-  try {
-    const app = initializeApp(FIREBASE_CONFIG);
-    const db  = getFirestore(app);
-    window.__db           = db;
-    window.__fsCollection = collection;
-    window.__fsOnSnapshot = onSnapshot;
-    window.__fsQuery      = query;
-    window.__fsOrderBy    = orderBy;
-  } catch (e) {
-    console.warn("Firebase não inicializado:", e.message);
-    // window.__db permanece undefined → main.js usa DEMO_PRODUCTS
-  }
-  window.dispatchEvent(new Event("fs-ready"));
-</script>
-<!-- Three.js -->
+<!-- Three.js (clássico, carrega antes de tudo) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
@@ -51,9 +18,8 @@
       <p class="glm-eyebrow eye-decor" id="eyebrow">ESCOLHA SUA EXPERIÊNCIA</p>
       <h1 class="glm-title title-decor" id="main-title">GLM UNIVERSE</h1>
       <div class="sel-row">
-        <!-- ✅ CORRIGIDO: usa data-theme em vez de onclick inline com window.GLM -->
-        <button class="sel-btn sel-active-decor" id="btn-d" data-theme="decor">🌿 ESSÊNCIA DECOR</button>
-        <button class="sel-btn" id="btn-c" data-theme="creative">✦ 3D CREATIVE</button>
+        <button class="sel-btn sel-active-decor" id="btn-d">🌿 ESSÊNCIA DECOR</button>
+        <button class="sel-btn" id="btn-c">✦ 3D CREATIVE</button>
       </div>
     </div>
     <div class="live-badge" id="live-badge">
@@ -61,9 +27,10 @@
       <span id="live-text">AO VIVO</span>
     </div>
   </section>
+
   <!-- ═══ PRODUTOS ═══ -->
   <section class="content">
-    <div class="divider" id="divider">
+    <div class="divider">
       <div class="dline dline-decor" id="dl1"></div>
       <span class="dtext dtext-decor" id="dtxt">PRODUTOS EM DESTAQUE</span>
       <div class="dline dline-decor" id="dl2"></div>
@@ -78,19 +45,24 @@
     </div>
     <div class="grid" id="grid" style="display:none"></div>
   </section>
+
   <!-- ═══ FOOTER ═══ -->
   <footer class="footer">
     <span>GLM Universe © 2025</span>
     <a href="admin/index.html" class="footer-admin-link">⚙ Admin</a>
   </footer>
 </div>
+
 <!-- Tooltip Three.js -->
 <div id="preview-3d" style="display:none;position:fixed;pointer-events:none;z-index:999;">
   <canvas id="preview-canvas" width="160" height="160"></canvas>
 </div>
-<!-- ✅ ORDEM CORRETA: clássicos primeiro, depois main.js (também clássico agora) -->
+
+<!-- Scripts clássicos primeiro (sem dependência de módulo) -->
 <script src="js/canvas-hero.js"></script>
 <script src="js/threejs-preview.js"></script>
-<script src="js/main.js"></script>
+
+<!-- main.js como módulo — ele mesmo importa Firebase e inicializa tudo -->
+<script type="module" src="js/main.js"></script>
 </body>
 </html>
