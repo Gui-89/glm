@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>GLM Universe</title>
+<link rel="stylesheet" href="css/style.css"/>
+
+<!-- Firebase v10 (modular CDN) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, onSnapshot, query, where, orderBy }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { FIREBASE_CONFIG } from "./js/firebase-config.js";
+
+  const app = initializeApp(FIREBASE_CONFIG);
+  const db  = getFirestore(app);
+  window.__db = db;
+
+  /* Expõe helpers para o main.js */
+  window.__fsCollection  = collection;
+  window.__fsOnSnapshot  = onSnapshot;
+  window.__fsQuery       = query;
+  window.__fsWhere       = where;
+  window.__fsOrderBy     = orderBy;
+
+  /* Dispara evento assim que Firestore estiver pronto */
+  window.dispatchEvent(new Event("fs-ready"));
+</script>
+
+<!-- Three.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+<div id="root" class="glm-root">
+
+  <!-- ═══ HERO ═══ -->
+  <section class="hero" id="hero">
+    <canvas id="hero-canvas"></canvas>
+    <div class="vignette"></div>
+
+    <div class="hero-text">
+      <p class="glm-eyebrow eye-decor" id="eyebrow">ESCOLHA SUA EXPERIÊNCIA</p>
+      <h1 class="glm-title title-decor" id="main-title">GLM UNIVERSE</h1>
+      <div class="sel-row">
+        <button class="sel-btn sel-active-decor" id="btn-d" onclick="window.GLM.setTheme('decor')">🌿 ESSÊNCIA DECOR</button>
+        <button class="sel-btn" id="btn-c" onclick="window.GLM.setTheme('creative')">✦ 3D CREATIVE</button>
+      </div>
+    </div>
+
+    <div class="live-badge" id="live-badge">
+      <div class="live-dot dot-decor" id="live-dot"></div>
+      <span id="live-text">AO VIVO</span>
+    </div>
+  </section>
+
+  <!-- ═══ PRODUTOS ═══ -->
+  <section class="content">
+    <div class="divider" id="divider">
+      <div class="dline dline-decor" id="dl1"></div>
+      <span class="dtext dtext-decor" id="dtxt">PRODUTOS EM DESTAQUE</span>
+      <div class="dline dline-decor" id="dl2"></div>
+    </div>
+
+    <!-- Estado de carregamento -->
+    <div id="loading-state" class="loading-state">
+      <div class="spinner"></div>
+      <p>Carregando catálogo…</p>
+    </div>
+
+    <!-- Estado vazio -->
+    <div id="empty-state" class="empty-state" style="display:none">
+      <p>🗂️ Nenhum produto cadastrado ainda.</p>
+      <a href="admin/index.html" class="btn-admin-link">Ir para o Painel Admin →</a>
+    </div>
+
+    <div class="grid" id="grid" style="display:none"></div>
+  </section>
+
+  <!-- ═══ FOOTER ═══ -->
+  <footer class="footer">
+    <span>GLM Universe © 2025</span>
+    <a href="admin/index.html" class="footer-admin-link">⚙ Admin</a>
+  </footer>
+
+</div>
+
+<!-- Three.js tooltip de preview 3D -->
+<div id="preview-3d" style="display:none;position:fixed;pointer-events:none;z-index:999;">
+  <canvas id="preview-canvas" width="160" height="160"></canvas>
+</div>
+
+<script src="js/canvas-hero.js"></script>
+<script src="js/threejs-preview.js"></script>
+<script src="js/main.js" type="module"></script>
+</body>
+</html>
