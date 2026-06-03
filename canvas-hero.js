@@ -1,13 +1,12 @@
 /* js/canvas-hero.js
    Partículas animadas no hero — adapta cor ao tema ativo */
 (function () {
-  // ✅ Aguarda DOM antes de buscar o canvas
   function setup() {
-    const canvas = document.getElementById('hero-canvas');
+    var canvas = document.getElementById('hero-canvas');
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    let W, H, particles = [], theme = 'decor';
-    const COLORS = {
+    var ctx = canvas.getContext('2d');
+    var W, H, particles = [], theme = 'decor';
+    var COLORS = {
       decor:    ['rgba(94,202,138,',  'rgba(74,160,100,',  'rgba(40,100,60,'],
       creative: ['rgba(201,166,255,', 'rgba(160,110,232,', 'rgba(100,60,200,']
     };
@@ -16,7 +15,7 @@
       H = canvas.height = canvas.offsetHeight;
     }
     function mkParticle() {
-      const c = COLORS[theme];
+      var c = COLORS[theme];
       return {
         x: Math.random() * W,
         y: Math.random() * H,
@@ -29,15 +28,16 @@
     }
     function init() {
       resize();
-      particles = Array.from({ length: 120 }, mkParticle);
+      particles = [];
+      for (var i = 0; i < 120; i++) particles.push(mkParticle());
     }
     function draw() {
       ctx.clearRect(0, 0, W, H);
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const d  = Math.sqrt(dx * dx + dy * dy);
+      for (var i = 0; i < particles.length; i++) {
+        for (var j = i + 1; j < particles.length; j++) {
+          var dx = particles[i].x - particles[j].x;
+          var dy = particles[i].y - particles[j].y;
+          var d  = Math.sqrt(dx * dx + dy * dy);
           if (d < 90) {
             ctx.beginPath();
             ctx.strokeStyle = particles[i].col + ((.12 * (1 - d / 90)).toFixed(3)) + ')';
@@ -48,7 +48,7 @@
           }
         }
       }
-      particles.forEach(p => {
+      particles.forEach(function(p) {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         ctx.fillStyle = p.col + p.a + ')';
@@ -60,17 +60,18 @@
       requestAnimationFrame(draw);
     }
     window.heroCanvas = {
-      setTheme(t) {
+      setTheme: function(t) {
         theme = t;
-        const c = COLORS[t];
-        particles.forEach(p => { p.col = c[Math.floor(Math.random() * c.length)]; });
+        var c = COLORS[t];
+        particles.forEach(function(p) {
+          p.col = c[Math.floor(Math.random() * c.length)];
+        });
       }
     };
     window.addEventListener('resize', resize);
     init();
     draw();
   }
-
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', setup);
   } else {
