@@ -1,0 +1,49 @@
+/* ════════════════════════════════════════════
+   ADMIN — complementos (adicionados)
+   ════════════════════════════════════════════ */
+
+/* Botão Google Login */
+.btn-google {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: .5px solid rgba(255,255,255,.15);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.85);
+  font-size: 12px;
+  letter-spacing: 1px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .3s;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.btn-google:hover {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.3);
+  box-shadow: 0 4px 20px rgba(0,0,0,.4);
+}
+.btn-google:active { transform: scale(.98); }
+
+/* Filtros de categoria na lista */
+.filter-btn {
+  padding: 5px 14px;
+  border-radius: 16px;
+  border: .5px solid rgba(255,255,255,.1);
+  background: transparent;
+  color: rgba(255,255,255,.35);
+  font-size: 9.5px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all .3s;
+  font-family: inherit;
+}
+.filter-btn:hover { border-color: rgba(255,255,255,.25); color: rgba(255,255,255,.7); }
+.filter-active {
+  border-color: rgba(94,202,138,.5);
+  color: var(--green);
+  background: rgba(74,160,100,.12);
+}
