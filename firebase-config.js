@@ -16,6 +16,6 @@ export const ALLOWED_EMAILS = [
 
 // Cloudinary — substitua pelos seus dados em https://cloudinary.com/console
 export const CLOUDINARY = {
-  cloudName:    'SEU_CLOUD_NAME',   // ex: dxyz123abc
+  cloudName:    'dpw50lfge',   // ex: dxyz123abc
   uploadPreset: 'glm_unsigned',     // crie um Upload Preset unsigned no Cloudinary
 };
