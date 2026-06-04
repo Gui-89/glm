@@ -1,27 +1,16 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — main.js  (ES module)
-   Todas as dependências importadas aqui: Three.js, Firebase.
-   Sem scripts externos, sem race conditions, sem window.THREE.
    ═══════════════════════════════════════════════════════════ */
 
 import * as THREE from 'three';
 import { initializeApp }   from 'firebase/app';
 import { getFirestore, collection, onSnapshot, query, orderBy }
   from 'firebase/firestore';
+import { FIREBASE_CONFIG } from './firebase-config.js';
 
 /* ══════════════════════════════════════════════════════════
    FIREBASE
    ══════════════════════════════════════════════════════════ */
-const FIREBASE_CONFIG = {
-  apiKey:            'AIzaSyAqEsBUgdvvVbuYgmqG59yFlqekMxQ8L3g',
-  authDomain:        'glm-universe.firebaseapp.com',
-  projectId:         'glm-universe',
-  storageBucket:     'glm-universe.firebasestorage.app',
-  messagingSenderId: '426101358920',
-  appId:             '1:426101358920:web:6d20b1c48ef2dba2d7b37d',
-  measurementId:     'G-DJ03MXYLQ3'
-};
-
 let db = null;
 try {
   const app = initializeApp(FIREBASE_CONFIG);
@@ -73,6 +62,205 @@ const THEME = {
 let currentTheme = 'decor';
 
 /* ══════════════════════════════════════════════════════════
+   CARRINHO
+   ══════════════════════════════════════════════════════════ */
+let cart = JSON.parse(localStorage.getItem('glm_cart') || '[]');
+
+function saveCart() {
+  localStorage.setItem('glm_cart', JSON.stringify(cart));
+}
+
+function cartTotal() {
+  return cart.reduce((s, i) => s + i.price * i.qty, 0);
+}
+
+function cartCount() {
+  return cart.reduce((s, i) => s + i.qty, 0);
+}
+
+function addToCart(prod, variantLabel = null, variantPrice = null) {
+  const price = variantPrice ?? prod.price ?? 0;
+  const key   = prod.id + (variantLabel ? '_' + variantLabel : '');
+  const idx   = cart.findIndex(i => i.key === key);
+  if (idx >= 0) {
+    cart[idx].qty++;
+  } else {
+    cart.push({
+      key,
+      id:      prod.id,
+      name:    prod.name,
+      emoji:   prod.emoji  || '📦',
+      imageUrl:prod.imageUrl || null,
+      price,
+      variant: variantLabel,
+      qty:     1,
+    });
+  }
+  saveCart();
+  renderCart();
+  updateCartFab();
+  showCartToast(prod.name);
+}
+
+function removeFromCart(key) {
+  cart = cart.filter(i => i.key !== key);
+  saveCart();
+  renderCart();
+  updateCartFab();
+}
+
+function changeQty(key, delta) {
+  const idx = cart.findIndex(i => i.key === key);
+  if (idx < 0) return;
+  cart[idx].qty = Math.max(1, cart[idx].qty + delta);
+  saveCart();
+  renderCart();
+  updateCartFab();
+}
+
+function updateCartFab() {
+  const cnt = cartCount();
+  const el  = document.getElementById('cart-fab-count');
+  if (!el) return;
+  el.textContent = cnt;
+  el.classList.toggle('visible', cnt > 0);
+}
+
+function showCartToast(name) {
+  const t = document.createElement('div');
+  t.className = 'cart-toast';
+  t.innerHTML = `<span>🛒</span> <b>${name}</b> adicionado ao carrinho`;
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add('show'), 10);
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 2200);
+}
+
+function fmtBRL(v) {
+  return 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+}
+
+function renderCart() {
+  const items   = document.getElementById('cart-items');
+  const empty   = document.getElementById('cart-empty');
+  const totalEl = document.getElementById('cart-total-val');
+  if (!items) return;
+
+  if (!cart.length) {
+    items.innerHTML = '';
+    if (empty)   empty.style.display = 'flex';
+    if (totalEl) totalEl.textContent = fmtBRL(0);
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (totalEl) totalEl.textContent = fmtBRL(cartTotal());
+
+  items.innerHTML = '';
+  cart.forEach(item => {
+    const el = document.createElement('div');
+    el.className = 'cart-item';
+    const img = item.imageUrl
+      ? `<img src="${item.imageUrl}" alt="${item.name}">`
+      : item.emoji;
+    el.innerHTML = `
+      <div class="cart-item-img">${img}</div>
+      <div class="cart-item-info">
+        <div class="cart-item-name">${item.name}</div>
+        ${item.variant ? `<div class="cart-item-variant">${item.variant}</div>` : ''}
+        <div class="cart-item-price">${fmtBRL(item.price)}</div>
+        <div class="cart-item-qty">
+          <button class="cart-qty-btn" data-key="${item.key}" data-d="-1">−</button>
+          <span class="cart-qty-val">${item.qty}</span>
+          <button class="cart-qty-btn" data-key="${item.key}" data-d="1">+</button>
+        </div>
+      </div>
+      <button class="cart-item-remove" data-key="${item.key}">✕</button>`;
+    el.querySelector('.cart-item-remove').addEventListener('click', () => removeFromCart(item.key));
+    el.querySelectorAll('.cart-qty-btn').forEach(b =>
+      b.addEventListener('click', () => changeQty(item.key, parseInt(b.dataset.d)))
+    );
+    items.appendChild(el);
+  });
+}
+
+function openCart()  {
+  document.getElementById('cart-overlay')?.classList.add('open');
+  document.getElementById('cart-drawer')?.classList.add('open');
+}
+function closeCart() {
+  document.getElementById('cart-overlay')?.classList.remove('open');
+  document.getElementById('cart-drawer')?.classList.remove('open');
+}
+
+/* ══════════════════════════════════════════════════════════
+   VARIANT MODAL
+   ══════════════════════════════════════════════════════════ */
+function openVariantModal(prod) {
+  const ov = document.getElementById('variant-overlay');
+  if (!ov) return;
+
+  const vars = prod.variations || [];
+
+  document.getElementById('vm-name').textContent  = prod.name;
+  document.getElementById('vm-price').textContent = fmtBRL(prod.price ?? 0);
+
+  const container = document.getElementById('vm-variants');
+  container.innerHTML = '';
+
+  if (!vars.length) {
+    // sem variações: adicionar direto
+    addToCart(prod);
+    return;
+  }
+
+  // Agrupar por tipo
+  const byType = {};
+  vars.forEach(v => {
+    if (!byType[v.type]) byType[v.type] = [];
+    byType[v.type].push(v);
+  });
+
+  let selected = {}; // type → variant object
+
+  Object.entries(byType).forEach(([type, variants]) => {
+    const group = document.createElement('div');
+    group.className = 'variant-group';
+    group.innerHTML = `<span class="variant-group-label">${type.toUpperCase()}</span>`;
+    const pills = document.createElement('div');
+    pills.className = 'variant-pills';
+
+    variants.forEach(v => {
+      const btn = document.createElement('button');
+      btn.className = 'variant-pill';
+      btn.textContent = v.label + (v.price ? ` (+${fmtBRL(v.price - (prod.price || 0))})` : '');
+      btn.addEventListener('click', () => {
+        pills.querySelectorAll('.variant-pill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selected[type] = v;
+        // Atualizar preço exibido
+        const prices = Object.values(selected).map(s => s.price).filter(Boolean);
+        const shown  = prices.length ? Math.max(...prices) : (prod.price ?? 0);
+        document.getElementById('vm-price').textContent = fmtBRL(shown);
+      });
+      pills.appendChild(btn);
+    });
+    group.appendChild(pills);
+    container.appendChild(group);
+  });
+
+  const btnAdd = document.getElementById('vm-add');
+  btnAdd.onclick = () => {
+    const label  = Object.values(selected).map(s => s.label).join(' / ') || null;
+    const prices = Object.values(selected).map(s => s.price).filter(Boolean);
+    const price  = prices.length ? Math.max(...prices) : (prod.price ?? 0);
+    addToCart(prod, label, price);
+    ov.classList.remove('open');
+  };
+
+  document.getElementById('vm-cancel').onclick = () => ov.classList.remove('open');
+  ov.classList.add('open');
+}
+
+/* ══════════════════════════════════════════════════════════
    CANVAS HERO — rede de partículas
    ══════════════════════════════════════════════════════════ */
 const P_COLORS = {
@@ -82,7 +270,7 @@ const P_COLORS = {
 
 function initCanvasHero() {
   const canvas = document.getElementById('hero-canvas');
-  if (!canvas) { console.warn('hero-canvas não encontrado'); return; }
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
   let W = 0, H = 0, particles = [], cTheme = 'decor';
 
@@ -133,7 +321,6 @@ function initCanvasHero() {
     requestAnimationFrame(draw);
   }
 
-  // setTheme exposto globalmente para applyTheme chamar
   window._heroSetTheme = (t) => {
     cTheme = t;
     const c = P_COLORS[t];
@@ -141,8 +328,6 @@ function initCanvasHero() {
   };
 
   window.addEventListener('resize', resize);
-
-  // duplo rAF: garante 2 frames de layout antes de ler offsetWidth
   requestAnimationFrame(() => requestAnimationFrame(() => {
     resize();
     particles = Array.from({ length: 120 }, mkP);
@@ -156,8 +341,8 @@ function initCanvasHero() {
 const PREV_COLORS = { decor: 0x5eca8a, creative: 0xc9a6ff };
 
 function initThreePreview() {
-  const wrap   = document.getElementById('preview-3d');
-  const cvs    = document.getElementById('preview-canvas');
+  const wrap = document.getElementById('preview-3d');
+  const cvs  = document.getElementById('preview-canvas');
   if (!wrap || !cvs) return;
 
   const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true, alpha: true });
@@ -214,7 +399,6 @@ function initThreePreview() {
     wrap.style.top  = t + 'px';
   }
 
-  // API exposta globalmente
   window._preview = {
     show(x, y, idx) {
       buildMesh(idx); pos(x, y);
@@ -264,18 +448,12 @@ function applyTheme(t) {
   window._heroSetTheme?.(t);
   window._preview?.setTheme(t);
 
-  // Re-renderiza grid com novo tema
   if (window.__lastProducts) renderGrid(window.__lastProducts);
 }
 
 /* ══════════════════════════════════════════════════════════
    CARDS
    ══════════════════════════════════════════════════════════ */
-function fmtPrice(v) {
-  if (v == null || v === '') return '—';
-  return 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-}
-
 function makeCard(prod, idx) {
   const T    = THEME[currentTheme];
   const card = document.createElement('div');
@@ -287,13 +465,23 @@ function makeCard(prod, idx) {
     : `<span class="emoji-fallback">${prod.emoji || '📦'}</span>`;
   const badge = prod.badge ? `<span class="${T.badge}">${prod.badge}</span>` : '';
 
+  const hasVars = prod.variations?.length > 0;
+  const btnLabel = hasVars ? '+ VER OPÇÕES' : '+ ADICIONAR';
+
   card.innerHTML = `
     <div class="${T.ci}">${img}${badge}</div>
     <div class="card-info">
       <div class="${T.name}">${prod.name}</div>
-      <div class="${T.price}">${fmtPrice(prod.price)}</div>
+      <div class="${T.price}">${fmtBRL(prod.price ?? 0)}</div>
       ${prod.description ? `<div class="card-desc">${prod.description}</div>` : ''}
-    </div>`;
+    </div>
+    <button class="card-add-btn">${btnLabel}</button>`;
+
+  card.querySelector('.card-add-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    if (hasVars) openVariantModal(prod);
+    else addToCart(prod);
+  });
 
   let ht;
   card.addEventListener('mouseenter', e => {
@@ -335,8 +523,7 @@ const DEMO = [
 
 function demoFiltered() {
   return DEMO.filter(p =>
-    currentTheme === 'creative' ? p.category === 'creative'
-                                : p.category === 'decor' || !p.category
+    currentTheme === 'creative' ? p.category === 'creative' : p.category === 'decor' || !p.category
   );
 }
 
@@ -349,8 +536,7 @@ function subscribeFirestore() {
     unsub = onSnapshot(ref, snap => {
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       const filtered = all.filter(p =>
-        currentTheme === 'creative' ? p.category === 'creative'
-                                    : p.category === 'decor' || !p.category
+        currentTheme === 'creative' ? p.category === 'creative' : p.category === 'decor' || !p.category
       );
       renderGrid(filtered.length ? filtered : all);
     }, err => {
@@ -366,7 +552,6 @@ function subscribeFirestore() {
 /* ══════════════════════════════════════════════════════════
    INIT
    ══════════════════════════════════════════════════════════ */
-// ES module + importmap = DOM garantido, Three.js garantido
 document.getElementById('btn-d').addEventListener('click', () => {
   applyTheme('decor');
   subscribeFirestore();
@@ -376,7 +561,19 @@ document.getElementById('btn-c').addEventListener('click', () => {
   subscribeFirestore();
 });
 
+// Carrinho
+document.getElementById('cart-fab')?.addEventListener('click', openCart);
+document.getElementById('cart-overlay')?.addEventListener('click', closeCart);
+document.getElementById('cart-close-btn')?.addEventListener('click', closeCart);
+document.getElementById('btn-checkout')?.addEventListener('click', () => {
+  if (!cart.length) return;
+  localStorage.setItem('glm_cart', JSON.stringify(cart));
+  window.location.href = 'checkout/index.html';
+});
+
 applyTheme('decor');
 initCanvasHero();
 initThreePreview();
+renderCart();
+updateCartFab();
 subscribeFirestore();
