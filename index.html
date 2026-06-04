@@ -5,24 +5,27 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>GLM Universe</title>
 <link rel="stylesheet" href="style.css"/>
-
-<!-- importmap: resolve "three" para o CDN dentro do módulo -->
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js",
+    "three":              "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js",
     "firebase/app":       "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js",
     "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"
   }
 }
 </script>
-
-<!-- único script — importa tudo via importmap, sem dependência de ordem -->
 <script type="module" src="js/main.js"></script>
 </head>
 <body>
 <div id="root" class="glm-root">
 
+  <!-- ═══ CART FAB ═══ -->
+  <button class="cart-fab" id="cart-fab">
+    🛒
+    <span class="cart-fab-count" id="cart-fab-count">0</span>
+  </button>
+
+  <!-- ═══ HERO ═══ -->
   <section class="hero" id="hero">
     <canvas id="hero-canvas"></canvas>
     <div class="vignette"></div>
@@ -40,13 +43,14 @@
     </div>
   </section>
 
+  <!-- ═══ PRODUTOS ═══ -->
   <section class="content">
     <div class="divider">
       <div class="dline dline-decor" id="dl1"></div>
       <span class="dtext dtext-decor" id="dtxt">PRODUTOS EM DESTAQUE</span>
       <div class="dline dline-decor" id="dl2"></div>
     </div>
-    <div id="loading-state" class="loading-state" style="display:none">
+    <div id="loading-state" class="loading-state">
       <div class="spinner"></div>
       <p>Carregando catálogo…</p>
     </div>
@@ -63,8 +67,44 @@
   </footer>
 </div>
 
+<!-- ═══ 3D PREVIEW ═══ -->
 <div id="preview-3d" style="display:none;position:fixed;pointer-events:none;z-index:999;">
   <canvas id="preview-canvas" width="160" height="160"></canvas>
 </div>
+
+<!-- ═══ CART OVERLAY & DRAWER ═══ -->
+<div class="cart-overlay" id="cart-overlay"></div>
+<div class="cart-drawer" id="cart-drawer">
+  <div class="cart-drawer-header">
+    <span class="cart-drawer-title">🛒 MEU CARRINHO</span>
+    <button class="cart-close-btn" id="cart-close-btn">✕</button>
+  </div>
+  <div class="cart-empty" id="cart-empty">
+    <div class="cart-empty-icon">🛒</div>
+    <p>Seu carrinho está vazio</p>
+  </div>
+  <div class="cart-items" id="cart-items"></div>
+  <div class="cart-footer">
+    <div class="cart-total-row">
+      <span class="cart-total-label">TOTAL</span>
+      <span class="cart-total-val" id="cart-total-val">R$ 0,00</span>
+    </div>
+    <button class="btn-checkout" id="btn-checkout">FINALIZAR COMPRA →</button>
+  </div>
+</div>
+
+<!-- ═══ VARIANT MODAL ═══ -->
+<div class="variant-overlay" id="variant-overlay">
+  <div class="variant-modal">
+    <h3 id="vm-name"></h3>
+    <div class="vm-price" id="vm-price"></div>
+    <div id="vm-variants"></div>
+    <div class="vm-actions">
+      <button class="vm-cancel" id="vm-cancel">Cancelar</button>
+      <button class="vm-add" id="vm-add">ADICIONAR AO CARRINHO</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
