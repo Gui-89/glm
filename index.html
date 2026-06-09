@@ -27,8 +27,22 @@
 
   <!-- ═══ HERO ═══ -->
   <section class="hero" id="hero">
+    <!-- Vídeo de fundo (coloque seu arquivo em /assets/hero-bg.mp4) -->
+    <video
+      class="hero-video"
+      id="hero-video"
+      autoplay
+      muted
+      loop
+      playsinline
+      poster="assets/hero-poster.jpg"
+    >
+      <source src="assets/hero-bg.mp4" type="video/mp4"/>
+    </video>
+
     <canvas id="hero-canvas"></canvas>
     <div class="vignette"></div>
+
     <div class="hero-text">
       <p class="glm-eyebrow eye-decor" id="eyebrow">ESCOLHA SUA EXPERIÊNCIA</p>
       <h1 class="glm-title title-decor" id="main-title">GLM UNIVERSE</h1>
@@ -37,6 +51,7 @@
         <button class="sel-btn" id="btn-c">✦ 3D CREATIVE</button>
       </div>
     </div>
+
     <div class="live-badge">
       <div class="live-dot dot-decor" id="live-dot"></div>
       <span id="live-text">AO VIVO</span>
@@ -50,14 +65,17 @@
       <span class="dtext dtext-decor" id="dtxt">PRODUTOS EM DESTAQUE</span>
       <div class="dline dline-decor" id="dl2"></div>
     </div>
-    <div id="loading-state" class="loading-state">
+
+    <div id="loading-state" class="loading-state" style="display:none">
       <div class="spinner"></div>
       <p>Carregando catálogo…</p>
     </div>
+
     <div id="empty-state" class="empty-state" style="display:none">
       <p>🗂️ Nenhum produto cadastrado ainda.</p>
       <a href="admin/index.html" class="btn-admin-link">Ir para o Painel Admin →</a>
     </div>
+
     <div class="grid" id="grid" style="display:none"></div>
   </section>
 
@@ -94,7 +112,8 @@
 </div>
 
 <!-- ═══ VARIANT MODAL ═══ -->
-<div class="variant-overlay" id="variant-overlay">
+<!-- CORREÇÃO: display:none era ausente, causando overlay bloqueando cliques -->
+<div class="variant-overlay" id="variant-overlay" style="display:none">
   <div class="variant-modal">
     <h3 id="vm-name"></h3>
     <div class="vm-price" id="vm-price"></div>
