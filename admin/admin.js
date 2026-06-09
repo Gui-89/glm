@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — admin.js  (ES module)
-   Auth Google · Firestore CRUD · Storage upload
+   Auth Google · Firestore CRUD · Cloudinary upload
    ═══════════════════════════════════════════════════════════ */
 
 import { initializeApp }          from 'firebase/app';
@@ -9,44 +9,22 @@ import { getFirestore, collection, onSnapshot, query, orderBy,
   from 'firebase/firestore';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from 'firebase/auth';
-import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject }
-  from 'firebase/storage';
-
-/* ══════════════════════════════════════════════════════════
-   CONFIG
-   ══════════════════════════════════════════════════════════ */
-const FIREBASE_CONFIG = {
-  apiKey:            'AIzaSyAqEsBUgdvvVbuYgmqG59yFlqekMxQ8L3g',
-  authDomain:        'glm-universe.firebaseapp.com',
-  projectId:         'glm-universe',
-  storageBucket:     'glm-universe.firebasestorage.app',
-  messagingSenderId: '426101358920',
-  appId:             '1:426101358920:web:6d20b1c48ef2dba2d7b37d',
-  measurementId:     'G-DJ03MXYLQ3'
-};
-
-// ✏️  ADICIONE AQUI os emails Google autorizados
-const ALLOWED_EMAILS = [
-  'guigas83@gmail.com',   // <- substitua pelo seu email
-  // 'outro@gmail.com',   // adicione mais se necessário
-];
+import { FIREBASE_CONFIG, ALLOWED_EMAILS, CLOUDINARY } from '../js/firebase-config.js';
 
 /* ══════════════════════════════════════════════════════════
    FIREBASE INIT
    ══════════════════════════════════════════════════════════ */
-const app     = initializeApp(FIREBASE_CONFIG);
-const db      = getFirestore(app);
-const auth    = getAuth(app);
-const storage = getStorage(app);
+const app  = initializeApp(FIREBASE_CONFIG);
+const db   = getFirestore(app);
+const auth = getAuth(app);
 
 /* ══════════════════════════════════════════════════════════
    STATE
    ══════════════════════════════════════════════════════════ */
-let allProducts  = [];
-let filterCat    = 'all';
-let searchQuery  = '';
+let allProducts      = [];
+let filterCat        = 'all';
+let searchQuery      = '';
 let pendingDeleteId  = null;
-let pendingDeleteImg = null;
 let unsubProducts    = null;
 let selectedFile     = null;
 
@@ -60,33 +38,33 @@ const viewPanel   = $('view-panel');
 const adminNav    = $('admin-nav');
 const loginError  = $('login-error');
 
-const uploadZone  = $('upload-zone');
-const fileInput   = $('file-input');
-const imgPreview  = $('img-preview');
-const btnClearImg = $('btn-clear-img');
+const uploadZone        = $('upload-zone');
+const fileInput         = $('file-input');
+const imgPreview        = $('img-preview');
+const btnClearImg       = $('btn-clear-img');
 const uploadPlaceholder = $('upload-placeholder');
 
-const fName     = $('f-name');
-const fPrice    = $('f-price');
-const fBadge    = $('f-badge');
-const fEmoji    = $('f-emoji');
-const fDesc     = $('f-desc');
-const fEditId   = $('f-edit-id');
+const fName      = $('f-name');
+const fPrice     = $('f-price');
+const fBadge     = $('f-badge');
+const fEmoji     = $('f-emoji');
+const fDesc      = $('f-desc');
+const fEditId    = $('f-edit-id');
 const fEditImgUrl = $('f-edit-img-url');
-const btnSave   = $('btn-save');
-const btnCancel = $('btn-cancel-edit');
+const btnSave    = $('btn-save');
+const btnCancel  = $('btn-cancel-edit');
 const formStatus = $('form-status');
 const formTitle  = $('form-title');
 
-const searchInput  = $('search-input');
-const productList  = $('product-list');
-const listCount    = $('list-count');
-const filterBtns   = document.querySelectorAll('.filter-btn');
+const searchInput = $('search-input');
+const productList = $('product-list');
+const listCount   = $('list-count');
+const filterBtns  = document.querySelectorAll('.filter-btn');
 
-const modalDelete      = $('modal-delete');
-const modalDeleteName  = $('modal-delete-name');
-const modalCancel      = $('modal-cancel');
-const modalConfirm     = $('modal-confirm');
+const modalDelete     = $('modal-delete');
+const modalDeleteName = $('modal-delete-name');
+const modalCancel     = $('modal-cancel');
+const modalConfirm    = $('modal-confirm');
 
 /* ══════════════════════════════════════════════════════════
    AUTH
@@ -121,7 +99,7 @@ onAuthStateChanged(auth, user => {
     viewPanel.style.display = 'none';
     adminNav.style.display  = 'none';
     if (unsubProducts) { unsubProducts(); unsubProducts = null; }
-    if (user) signOut(auth); // loga fora se email não autorizado
+    if (user) signOut(auth);
   }
 });
 
@@ -191,7 +169,7 @@ function renderList() {
       </div>
       <div class="product-item-actions">
         <button class="btn-icon" data-edit="${p.id}" title="Editar">✏️</button>
-        <button class="btn-icon" data-delete="${p.id}" data-name="${p.name}" data-img="${p.imageUrl || ''}" title="Excluir">🗑️</button>
+        <button class="btn-icon" data-delete="${p.id}" data-name="${p.name}" title="Excluir">🗑️</button>
       </div>`;
 
     item.querySelector('[data-edit]').addEventListener('click',   () => openEdit(p));
@@ -218,7 +196,7 @@ searchInput.addEventListener('input', () => {
 });
 
 /* ══════════════════════════════════════════════════════════
-   UPLOAD DE IMAGEM
+   UPLOAD DE IMAGEM — CLOUDINARY (sem Firebase Storage)
    ══════════════════════════════════════════════════════════ */
 uploadZone.addEventListener('click', () => fileInput.click());
 
@@ -247,24 +225,58 @@ btnClearImg.addEventListener('click', e => {
 
 function setPreviewFile(file) {
   if (!file.type.startsWith('image/')) { showToast('Arquivo inválido.', 'err'); return; }
-  if (file.size > 5 * 1024 * 1024)    { showToast('Imagem muito grande (máx 5MB).', 'err'); return; }
+  if (file.size > 10 * 1024 * 1024)   { showToast('Imagem muito grande (máx 10MB).', 'err'); return; }
   selectedFile = file;
   const url = URL.createObjectURL(file);
   imgPreview.src = url;
-  imgPreview.style.display = 'block';
+  imgPreview.style.display     = 'block';
   uploadPlaceholder.style.display = 'none';
-  btnClearImg.style.display = 'flex';
+  btnClearImg.style.display    = 'flex';
   uploadZone.classList.add('has-preview');
 }
 
 function clearImagePreview() {
-  selectedFile       = null;
-  fileInput.value    = '';
-  imgPreview.src     = '';
-  imgPreview.style.display     = 'none';
+  selectedFile                    = null;
+  fileInput.value                 = '';
+  imgPreview.src                  = '';
+  imgPreview.style.display        = 'none';
   uploadPlaceholder.style.display = '';
-  btnClearImg.style.display    = 'none';
+  btnClearImg.style.display       = 'none';
   uploadZone.classList.remove('has-preview');
+}
+
+/**
+ * Faz upload para o Cloudinary via unsigned preset.
+ * Retorna a URL segura da imagem.
+ */
+async function uploadToCloudinary(file, onProgress) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', CLOUDINARY.uploadPreset);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUDINARY.cloudName}/image/upload`);
+
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round(e.loaded / e.total * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      try {
+        const res = JSON.parse(xhr.responseText);
+        if (res.secure_url) resolve(res.secure_url);
+        else reject(new Error(res.error?.message || 'Upload falhou'));
+      } catch (e) {
+        reject(e);
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Erro de rede no upload'));
+    xhr.send(formData);
+  });
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -285,25 +297,12 @@ async function saveProduct() {
 
   try {
     let imageUrl = fEditImgUrl.value || '';
-    let imagePath = '';
 
-    // Upload nova imagem se selecionada
+    // Upload para Cloudinary se há nova imagem selecionada
     if (selectedFile) {
-      const ext  = selectedFile.name.split('.').pop();
-      const path = `products/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      imagePath  = path;
-      const sRef = storageRef(storage, path);
-      const task = uploadBytesResumable(sRef, selectedFile);
-
-      imageUrl = await new Promise((resolve, reject) => {
-        task.on('state_changed',
-          snap => {
-            const pct = Math.round(snap.bytesTransferred / snap.totalBytes * 100);
-            setStatus(`Enviando imagem… ${pct}%`, '');
-          },
-          reject,
-          async () => resolve(await getDownloadURL(task.snapshot.ref))
-        );
+      setStatus('Enviando imagem… 0%', '');
+      imageUrl = await uploadToCloudinary(selectedFile, pct => {
+        setStatus(`Enviando imagem… ${pct}%`, '');
       });
     }
 
@@ -315,7 +314,6 @@ async function saveProduct() {
       description: fDesc.value.trim()  || null,
       category:    cat,
       imageUrl:    imageUrl || null,
-      imagePath:   imagePath || null,
     };
 
     const editId = fEditId.value;
@@ -354,16 +352,16 @@ function openEdit(p) {
 
   if (p.imageUrl) {
     imgPreview.src = p.imageUrl;
-    imgPreview.style.display    = 'block';
+    imgPreview.style.display        = 'block';
     uploadPlaceholder.style.display = 'none';
-    btnClearImg.style.display   = 'flex';
+    btnClearImg.style.display       = 'flex';
     uploadZone.classList.add('has-preview');
   } else {
     clearImagePreview();
   }
 
-  formTitle.textContent = 'EDITANDO PRODUTO';
-  btnSave.textContent   = 'ATUALIZAR PRODUTO';
+  formTitle.textContent   = 'EDITANDO PRODUTO';
+  btnSave.textContent     = 'ATUALIZAR PRODUTO';
   btnCancel.style.display = '';
   setStatus('', '');
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -372,8 +370,7 @@ function openEdit(p) {
 btnCancel.addEventListener('click', resetForm);
 
 function resetForm() {
-  fEditId.value     = '';
-  fEditImgUrl.value = '';
+  fEditId.value = fEditImgUrl.value = '';
   fName.value = fPrice.value = fBadge.value = fEmoji.value = fDesc.value = '';
   document.querySelector('input[name="cat"][value="decor"]').checked = true;
   clearImagePreview();
@@ -387,26 +384,26 @@ function resetForm() {
    DELETAR
    ══════════════════════════════════════════════════════════ */
 function openDelete(p) {
-  pendingDeleteId  = p.id;
-  pendingDeleteImg = p.imagePath || null;
+  pendingDeleteId = p.id;
   modalDeleteName.textContent = `Excluir "${p.name}"? Esta ação não pode ser desfeita.`;
   modalDelete.style.display   = 'flex';
 }
 
-modalCancel.addEventListener('click',  () => { modalDelete.style.display = 'none'; pendingDeleteId = null; });
+modalCancel.addEventListener('click', () => {
+  modalDelete.style.display = 'none';
+  pendingDeleteId = null;
+});
+
 modalConfirm.addEventListener('click', async () => {
   if (!pendingDeleteId) return;
   modalDelete.style.display = 'none';
   try {
     await deleteDoc(doc(db, 'products', pendingDeleteId));
-    if (pendingDeleteImg) {
-      try { await deleteObject(storageRef(storage, pendingDeleteImg)); } catch (_) {}
-    }
     showToast('Produto excluído.', 'ok');
   } catch (e) {
     showToast('Erro ao excluir: ' + e.message, 'err');
   }
-  pendingDeleteId = pendingDeleteImg = null;
+  pendingDeleteId = null;
 });
 
 /* ══════════════════════════════════════════════════════════
