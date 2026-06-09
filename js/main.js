@@ -64,10 +64,11 @@ let currentTheme = 'decor';
 /* ══════════════════════════════════════════════════════════
    CARRINHO
    ══════════════════════════════════════════════════════════ */
-let cart = JSON.parse(localStorage.getItem('glm_cart') || '[]');
+let cart = [];
+try { cart = JSON.parse(localStorage.getItem('glm_cart') || '[]'); } catch(_) {}
 
 function saveCart() {
-  localStorage.setItem('glm_cart', JSON.stringify(cart));
+  try { localStorage.setItem('glm_cart', JSON.stringify(cart)); } catch(_) {}
 }
 
 function cartTotal() {
@@ -87,13 +88,13 @@ function addToCart(prod, variantLabel = null, variantPrice = null) {
   } else {
     cart.push({
       key,
-      id:      prod.id,
-      name:    prod.name,
-      emoji:   prod.emoji  || '📦',
-      imageUrl:prod.imageUrl || null,
+      id:       prod.id,
+      name:     prod.name,
+      emoji:    prod.emoji   || '📦',
+      imageUrl: prod.imageUrl || null,
       price,
-      variant: variantLabel,
-      qty:     1,
+      variant:  variantLabel,
+      qty:      1,
     });
   }
   saveCart();
@@ -207,19 +208,17 @@ function openVariantModal(prod) {
   container.innerHTML = '';
 
   if (!vars.length) {
-    // sem variações: adicionar direto
     addToCart(prod);
     return;
   }
 
-  // Agrupar por tipo
   const byType = {};
   vars.forEach(v => {
     if (!byType[v.type]) byType[v.type] = [];
     byType[v.type].push(v);
   });
 
-  let selected = {}; // type → variant object
+  let selected = {};
 
   Object.entries(byType).forEach(([type, variants]) => {
     const group = document.createElement('div');
@@ -236,7 +235,6 @@ function openVariantModal(prod) {
         pills.querySelectorAll('.variant-pill').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         selected[type] = v;
-        // Atualizar preço exibido
         const prices = Object.values(selected).map(s => s.price).filter(Boolean);
         const shown  = prices.length ? Math.max(...prices) : (prod.price ?? 0);
         document.getElementById('vm-price').textContent = fmtBRL(shown);
@@ -253,11 +251,11 @@ function openVariantModal(prod) {
     const prices = Object.values(selected).map(s => s.price).filter(Boolean);
     const price  = prices.length ? Math.max(...prices) : (prod.price ?? 0);
     addToCart(prod, label, price);
-    ov.classList.remove('open');
+    ov.style.display = 'none'; // CORREÇÃO: usa display ao invés de classList
   };
 
-  document.getElementById('vm-cancel').onclick = () => ov.classList.remove('open');
-  ov.classList.add('open');
+  document.getElementById('vm-cancel').onclick = () => { ov.style.display = 'none'; };
+  ov.style.display = 'flex'; // CORREÇÃO: usa display ao invés de classList
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -445,10 +443,18 @@ function applyTheme(t) {
   document.getElementById('live-dot').className    = T.dot;
   document.getElementById('live-text').textContent = T.liveText;
 
+  // Cor do vídeo hero (filtro)
+  const video = document.getElementById('hero-video');
+  if (video) {
+    video.style.filter = t === 'creative'
+      ? 'hue-rotate(200deg) saturate(0.7) brightness(0.5)'
+      : 'brightness(0.4) saturate(0.6)';
+  }
+
   window._heroSetTheme?.(t);
   window._preview?.setTheme(t);
 
-  if (window.__lastProducts) renderGrid(window.__lastProducts);
+  if (window.__lastProducts !== undefined) renderGrid(window.__lastProducts);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -497,18 +503,22 @@ function renderGrid(products) {
   const grid    = document.getElementById('grid');
   const loading = document.getElementById('loading-state');
   const empty   = document.getElementById('empty-state');
-  loading.style.display = 'none';
+
+  if (loading) loading.style.display = 'none';
+
   if (!products?.length) {
-    grid.style.display = 'none'; empty.style.display = 'block'; return;
+    if (grid)  grid.style.display  = 'none';
+    if (empty) empty.style.display = 'block';
+    return;
   }
-  empty.style.display = 'none';
-  grid.style.display  = 'grid';
-  grid.innerHTML      = '';
+  if (empty) empty.style.display = 'none';
+  if (grid)  grid.style.display  = 'grid';
+  grid.innerHTML = '';
   products.forEach((p, i) => grid.appendChild(makeCard(p, i)));
 }
 
 /* ══════════════════════════════════════════════════════════
-   FIRESTORE
+   FIRESTORE  — com timeout de fallback
    ══════════════════════════════════════════════════════════ */
 const DEMO = [
   { id:'1', name:'Quadro Minimalista', price:189, badge:'NOVO', emoji:'🖼️', description:'Arte exclusiva para sua sala',     category:'decor'    },
@@ -528,22 +538,52 @@ function demoFiltered() {
 }
 
 let unsub = null;
+let fallbackTimer = null;
+
 function subscribeFirestore() {
-  if (!db) { renderGrid(demoFiltered()); return; }
-  if (unsub) unsub();
+  // Cancela listener anterior
+  if (unsub) { unsub(); unsub = null; }
+  clearTimeout(fallbackTimer);
+
+  // Mostra loading
+  const loading = document.getElementById('loading-state');
+  const grid    = document.getElementById('grid');
+  const empty   = document.getElementById('empty-state');
+  if (loading) loading.style.display = 'block';
+  if (grid)    grid.style.display    = 'none';
+  if (empty)   empty.style.display   = 'none';
+
+  // CORREÇÃO: Se não tem Firestore, cai direto no demo sem loading infinito
+  if (!db) {
+    renderGrid(demoFiltered());
+    return;
+  }
+
+  // Fallback: se em 5s não chegou resposta, usa demo
+  fallbackTimer = setTimeout(() => {
+    console.warn('Firestore timeout — usando dados demo');
+    renderGrid(demoFiltered());
+  }, 5000);
+
   try {
     const ref = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
     unsub = onSnapshot(ref, snap => {
+      clearTimeout(fallbackTimer);
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       const filtered = all.filter(p =>
-        currentTheme === 'creative' ? p.category === 'creative' : p.category === 'decor' || !p.category
+        currentTheme === 'creative'
+          ? p.category === 'creative'
+          : p.category === 'decor' || !p.category
       );
-      renderGrid(filtered.length ? filtered : all);
+      // Se não há produtos para o tema atual mas tem dados no Firestore, mostra tudo
+      renderGrid(filtered.length ? filtered : (all.length ? [] : demoFiltered()));
     }, err => {
+      clearTimeout(fallbackTimer);
       console.warn('Firestore erro:', err.message);
       renderGrid(demoFiltered());
     });
   } catch (e) {
+    clearTimeout(fallbackTimer);
     console.warn('Firestore falhou:', e.message);
     renderGrid(demoFiltered());
   }
@@ -567,10 +607,11 @@ document.getElementById('cart-overlay')?.addEventListener('click', closeCart);
 document.getElementById('cart-close-btn')?.addEventListener('click', closeCart);
 document.getElementById('btn-checkout')?.addEventListener('click', () => {
   if (!cart.length) return;
-  localStorage.setItem('glm_cart', JSON.stringify(cart));
+  saveCart();
   window.location.href = 'checkout/index.html';
 });
 
+// Inicia
 applyTheme('decor');
 initCanvasHero();
 initThreePreview();
