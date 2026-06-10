@@ -1,5 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — main.js  (ES module)
+   v5 — fixes: theme switch, video hero, checkout overlay, cache
    ═══════════════════════════════════════════════════════════ */
 
 import * as THREE from 'three';
@@ -193,6 +194,81 @@ function closeCart() {
 }
 
 /* ══════════════════════════════════════════════════════════
+   CHECKOUT — overlay (sem redirect)
+   ══════════════════════════════════════════════════════════ */
+let selectedPayment = 'pix';
+let selectedDelivery = 'retirada';
+
+function openCheckout() {
+  if (!cart.length) return;
+  closeCart();
+
+  // Preenche resumo
+  const summaryEl = document.getElementById('checkout-items-summary');
+  const totalEl   = document.getElementById('checkout-total-display');
+  if (summaryEl) {
+    summaryEl.innerHTML = cart.map(item => `
+      <div class="co-item-row">
+        <span class="co-item-qty">${item.qty}x</span>
+        <span class="co-item-name">${item.name}${item.variant ? ` · ${item.variant}` : ''}</span>
+        <span class="co-item-price">${fmtBRL(item.price * item.qty)}</span>
+      </div>`).join('');
+  }
+  if (totalEl) totalEl.textContent = fmtBRL(cartTotal());
+
+  document.getElementById('checkout-overlay')?.classList.add('open');
+}
+
+function closeCheckout() {
+  document.getElementById('checkout-overlay')?.classList.remove('open');
+}
+
+function sendOrder() {
+  const name    = document.getElementById('co-name')?.value.trim();
+  const phone   = document.getElementById('co-phone')?.value.trim();
+  const address = document.getElementById('co-address')?.value.trim();
+  const notes   = document.getElementById('co-notes')?.value.trim();
+  const errEl   = document.getElementById('checkout-error');
+
+  if (!name)  { if (errEl) errEl.textContent = 'Por favor, informe seu nome.'; return; }
+  if (!phone) { if (errEl) errEl.textContent = 'Por favor, informe seu WhatsApp.'; return; }
+  if (selectedDelivery === 'entrega' && !address) {
+    if (errEl) errEl.textContent = 'Por favor, informe o endereço de entrega.';
+    return;
+  }
+  if (errEl) errEl.textContent = '';
+
+  const lines = cart.map(i =>
+    `• ${i.qty}x ${i.name}${i.variant ? ` (${i.variant})` : ''} — ${fmtBRL(i.price * i.qty)}`
+  );
+  const total = fmtBRL(cartTotal());
+  const entrega = selectedDelivery === 'entrega'
+    ? `🚚 Entrega em: ${address}`
+    : '🏪 Retirada (combinar local)';
+  const pagamento = { pix:'💠 PIX', cartao:'💳 Cartão', dinheiro:'💵 Dinheiro' }[selectedPayment] || '';
+
+  const msg = [
+    `*Novo Pedido — GLM Universe* 🛍️`,
+    ``,
+    `*Cliente:* ${name}`,
+    `*WhatsApp:* ${phone}`,
+    ``,
+    `*Itens:*`,
+    ...lines,
+    ``,
+    `*Total:* ${total}`,
+    `*Entrega:* ${entrega}`,
+    `*Pagamento:* ${pagamento}`,
+    notes ? `*Obs:* ${notes}` : null,
+  ].filter(l => l !== null).join('\n');
+
+  // Número do WhatsApp do lojista — ajuste aqui
+  const waNumber = '5561999999999';
+  const url = `https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
+}
+
+/* ══════════════════════════════════════════════════════════
    VARIANT MODAL
    ══════════════════════════════════════════════════════════ */
 function openVariantModal(prod) {
@@ -251,11 +327,18 @@ function openVariantModal(prod) {
     const prices = Object.values(selected).map(s => s.price).filter(Boolean);
     const price  = prices.length ? Math.max(...prices) : (prod.price ?? 0);
     addToCart(prod, label, price);
-    ov.style.display = 'none'; // CORREÇÃO: usa display ao invés de classList
+    ov.classList.remove('open');
+    ov.style.display = '';
   };
 
-  document.getElementById('vm-cancel').onclick = () => { ov.style.display = 'none'; };
-  ov.style.display = 'flex'; // CORREÇÃO: usa display ao invés de classList
+  document.getElementById('vm-cancel').onclick = () => {
+    ov.classList.remove('open');
+    ov.style.display = '';
+  };
+
+  ov.style.display = 'flex';
+  // Garante animação
+  requestAnimationFrame(() => ov.classList.add('open'));
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -275,7 +358,7 @@ function initCanvasHero() {
   function resize() {
     const hero = canvas.parentElement;
     W = canvas.width  = hero ? hero.offsetWidth  : window.innerWidth;
-    H = canvas.height = hero ? hero.offsetHeight : 360;
+    H = canvas.height = hero ? hero.offsetHeight : 420;
   }
 
   function mkP() {
@@ -325,7 +408,7 @@ function initCanvasHero() {
     particles.forEach(p => { p.col = c[Math.floor(Math.random() * c.length)]; });
   };
 
-  window.addEventListener('resize', resize);
+  window.addEventListener('resize', () => { resize(); });
   requestAnimationFrame(() => requestAnimationFrame(() => {
     resize();
     particles = Array.from({ length: 120 }, mkP);
@@ -420,40 +503,61 @@ function initThreePreview() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   APPLY THEME
+   APPLY THEME — FIX PRINCIPAL
    ══════════════════════════════════════════════════════════ */
 function applyTheme(t) {
   currentTheme = t;
   const T = THEME[t];
 
+  // Eyebrow
   const ey = document.getElementById('eyebrow');
-  ey.textContent = T.eyebrow;
-  ey.className   = 'glm-eyebrow ' + T.eyeClass;
+  if (ey) { ey.textContent = T.eyebrow; ey.className = 'glm-eyebrow ' + T.eyeClass; }
 
-  document.getElementById('main-title').className = 'glm-title ' + T.titleClass;
-  document.getElementById('btn-d').className = T.btnD;
-  document.getElementById('btn-c').className = T.btnC;
-  document.getElementById('dl1').className   = T.dline;
-  document.getElementById('dl2').className   = T.dline;
+  // Título
+  const title = document.getElementById('main-title');
+  if (title) title.className = 'glm-title ' + T.titleClass;
 
+  // Botões seletores
+  const btnD = document.getElementById('btn-d');
+  const btnC = document.getElementById('btn-c');
+  if (btnD) btnD.className = T.btnD;
+  if (btnC) btnC.className = T.btnC;
+
+  // Divisor
+  const dl1  = document.getElementById('dl1');
+  const dl2  = document.getElementById('dl2');
   const dtxt = document.getElementById('dtxt');
-  dtxt.className   = T.dtext;
-  dtxt.textContent = T.divText;
+  if (dl1)  dl1.className   = T.dline;
+  if (dl2)  dl2.className   = T.dline;
+  if (dtxt) { dtxt.className = T.dtext; dtxt.textContent = T.divText; }
 
-  document.getElementById('live-dot').className    = T.dot;
-  document.getElementById('live-text').textContent = T.liveText;
+  // Live badge
+  const dot  = document.getElementById('live-dot');
+  const ltxt = document.getElementById('live-text');
+  if (dot)  dot.className   = T.dot;
+  if (ltxt) ltxt.textContent = T.liveText;
 
-  // Cor do vídeo hero (filtro)
+  // Vídeo hero — filtro de cor para o tema
   const video = document.getElementById('hero-video');
   if (video) {
     video.style.filter = t === 'creative'
-      ? 'hue-rotate(200deg) saturate(0.7) brightness(0.5)'
-      : 'brightness(0.4) saturate(0.6)';
+      ? 'hue-rotate(200deg) saturate(0.8) brightness(0.45)'
+      : 'brightness(0.45) saturate(0.7)';
   }
 
+  // Canvas e preview 3D
   window._heroSetTheme?.(t);
   window._preview?.setTheme(t);
 
+  // Cor do checkout e carrinho seguem o tema
+  document.documentElement.style.setProperty('--accent',
+    t === 'creative' ? 'var(--purple)' : 'var(--green)');
+  document.documentElement.style.setProperty('--accent-d',
+    t === 'creative' ? 'var(--purple-d)' : 'var(--green-d)');
+  document.documentElement.style.setProperty('--accent-b',
+    t === 'creative' ? 'var(--purple-b)' : 'var(--green-b)');
+
+  // Re-renderiza grid se já tiver produtos
   if (window.__lastProducts !== undefined) renderGrid(window.__lastProducts);
 }
 
@@ -541,11 +645,9 @@ let unsub = null;
 let fallbackTimer = null;
 
 function subscribeFirestore() {
-  // Cancela listener anterior
   if (unsub) { unsub(); unsub = null; }
   clearTimeout(fallbackTimer);
 
-  // Mostra loading
   const loading = document.getElementById('loading-state');
   const grid    = document.getElementById('grid');
   const empty   = document.getElementById('empty-state');
@@ -553,13 +655,12 @@ function subscribeFirestore() {
   if (grid)    grid.style.display    = 'none';
   if (empty)   empty.style.display   = 'none';
 
-  // CORREÇÃO: Se não tem Firestore, cai direto no demo sem loading infinito
   if (!db) {
-    renderGrid(demoFiltered());
+    // Pequeno delay para mostrar o loading breve antes do demo
+    setTimeout(() => renderGrid(demoFiltered()), 300);
     return;
   }
 
-  // Fallback: se em 5s não chegou resposta, usa demo
   fallbackTimer = setTimeout(() => {
     console.warn('Firestore timeout — usando dados demo');
     renderGrid(demoFiltered());
@@ -575,7 +676,6 @@ function subscribeFirestore() {
           ? p.category === 'creative'
           : p.category === 'decor' || !p.category
       );
-      // Se não há produtos para o tema atual mas tem dados no Firestore, mostra tudo
       renderGrid(filtered.length ? filtered : (all.length ? [] : demoFiltered()));
     }, err => {
       clearTimeout(fallbackTimer);
@@ -590,13 +690,18 @@ function subscribeFirestore() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   INIT
+   INIT — event listeners
    ══════════════════════════════════════════════════════════ */
-document.getElementById('btn-d').addEventListener('click', () => {
+
+// Seletores de tema
+document.getElementById('btn-d')?.addEventListener('click', () => {
+  if (currentTheme === 'decor') return; // já ativo
   applyTheme('decor');
   subscribeFirestore();
 });
-document.getElementById('btn-c').addEventListener('click', () => {
+
+document.getElementById('btn-c')?.addEventListener('click', () => {
+  if (currentTheme === 'creative') return; // já ativo
   applyTheme('creative');
   subscribeFirestore();
 });
@@ -605,10 +710,34 @@ document.getElementById('btn-c').addEventListener('click', () => {
 document.getElementById('cart-fab')?.addEventListener('click', openCart);
 document.getElementById('cart-overlay')?.addEventListener('click', closeCart);
 document.getElementById('cart-close-btn')?.addEventListener('click', closeCart);
+
+// Checkout — abre overlay, NÃO redireciona
 document.getElementById('btn-checkout')?.addEventListener('click', () => {
   if (!cart.length) return;
-  saveCart();
-  window.location.href = 'checkout/index.html';
+  openCheckout();
+});
+
+document.getElementById('checkout-back')?.addEventListener('click', closeCheckout);
+
+// Enviar pedido via WhatsApp
+document.getElementById('btn-send-order')?.addEventListener('click', sendOrder);
+
+// Pagamento
+document.querySelectorAll('.pay-opt').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.pay-opt').forEach(b => b.classList.remove('pay-opt-active'));
+    btn.classList.add('pay-opt-active');
+    selectedPayment = btn.dataset.pay;
+  });
+});
+
+// Entrega
+document.querySelectorAll('input[name="delivery"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    selectedDelivery = radio.value;
+    const addrField = document.getElementById('address-field');
+    if (addrField) addrField.style.display = radio.value === 'entrega' ? 'block' : 'none';
+  });
 });
 
 // Inicia
