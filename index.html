@@ -8,18 +8,16 @@
 <!--
   ═══════════════════════════════════════════════════════════
   CACHE BUSTING
-  Incremente BUILD_ID a cada deploy (ex: 20250611-001).
-  O Service Worker também usa essa versão para invalidar caches
-  antigos automaticamente.
+  __BUILD_ID__ é substituído automaticamente pelo GitHub Actions
+  a cada push para main (deploy.yml). Não precisa editar manualmente.
   ═══════════════════════════════════════════════════════════
 -->
 <script>
 (function() {
-  var BUILD_ID = '20250610-002'; // ← INCREMENTE A CADA DEPLOY
+  var BUILD_ID = '__BUILD_ID__';
   var stored = sessionStorage.getItem('glm_build');
   if (stored && stored !== BUILD_ID) {
     sessionStorage.setItem('glm_build', BUILD_ID);
-    // Força recarregamento sem cache quando há nova versão
     if ('caches' in window) {
       caches.keys().then(function(keys) {
         keys.forEach(function(k) { caches.delete(k); });
@@ -29,13 +27,11 @@
   } else {
     sessionStorage.setItem('glm_build', BUILD_ID);
   }
-  // Expõe o build ID para o SW
   window.GLM_BUILD = BUILD_ID;
 })();
 </script>
 
-<!-- Cache busting via query string nos assets estáticos -->
-<link rel="stylesheet" href="style.css?v=20250610-002"/>
+<link rel="stylesheet" href="style.css?v=__BUILD_ID__"/>
 
 <script type="importmap">
 {
@@ -46,16 +42,14 @@
   }
 }
 </script>
-<script type="module" src="js/main.js?v=20250610-002"></script>
+<script type="module" src="js/main.js?v=__BUILD_ID__"></script>
 
 <!-- Service Worker -->
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('/sw.js').then(function(reg) {
-      // Verifica atualizações quando a página carrega
       reg.update();
-      // Se há um SW esperando, manda ele ativar imediatamente
       if (reg.waiting) {
         reg.waiting.postMessage('SKIP_WAITING');
       }
@@ -71,7 +65,6 @@ if ('serviceWorker' in navigator) {
       console.warn('SW registration failed:', err);
     });
 
-    // Quando o SW tomar controle, recarrega a página para garantir assets novos
     var refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', function() {
       if (!refreshing) {
@@ -102,7 +95,7 @@ if ('serviceWorker' in navigator) {
       autoplay muted loop playsinline
       poster="assets/hero-poster.jpg"
     >
-      <source src="assets/hero-bg.mp4" type="video/mp4"/>
+      <source src="assets/video-hero.mp4" type="video/mp4"/>
     </video>
 
     <!-- Camada 1: Canvas de partículas (pointer-events:none no CSS) -->
@@ -116,8 +109,8 @@ if ('serviceWorker' in navigator) {
       <p class="glm-eyebrow eye-decor" id="eyebrow">ESCOLHA SUA EXPERIÊNCIA</p>
       <h1 class="glm-title title-decor" id="main-title">GLM UNIVERSE</h1>
       <div class="sel-row">
-        <button class="sel-btn sel-active-decor" id="btn-d" data-theme="decor">🌿 ESSÊNCIA DECOR</button>
-        <button class="sel-btn" id="btn-c" data-theme="creative">✦ CREATIVE 3D</button>
+        <button type="button" class="sel-btn sel-active-decor" id="btn-d" data-theme="decor">🌿 ESSÊNCIA DECOR</button>
+        <button type="button" class="sel-btn" id="btn-c" data-theme="creative">✦ CREATIVE 3D</button>
       </div>
     </div>
 
@@ -261,9 +254,9 @@ if ('serviceWorker' in navigator) {
       <div class="checkout-section">
         <h2 class="checkout-section-title">Pagamento</h2>
         <div class="payment-options">
-          <button class="pay-opt pay-opt-active" data-pay="pix">💠 PIX</button>
-          <button class="pay-opt" data-pay="cartao">💳 Cartão</button>
-          <button class="pay-opt" data-pay="dinheiro">💵 Dinheiro</button>
+          <button type="button" class="pay-opt pay-opt-active" data-pay="pix">💠 PIX</button>
+          <button type="button" class="pay-opt" data-pay="cartao">💳 Cartão</button>
+          <button type="button" class="pay-opt" data-pay="dinheiro">💵 Dinheiro</button>
         </div>
       </div>
 
@@ -277,7 +270,7 @@ if ('serviceWorker' in navigator) {
 
       <div class="checkout-error" id="checkout-error"></div>
 
-      <button class="btn-send-order" id="btn-send-order">
+      <button type="button" class="btn-send-order" id="btn-send-order">
         <span>📲 ENVIAR PEDIDO VIA WHATSAPP</span>
       </button>
     </div>
