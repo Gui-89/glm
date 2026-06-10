@@ -73,8 +73,19 @@ function applyTheme(t) {
   if (dot)  dot.className   = T.dot;
   if (ltxt) ltxt.textContent = T.liveText;
 
+  // Vídeo hero — troca de fonte conforme o tema
   const video = document.getElementById('hero-video');
   if (video) {
+    const newSrc = t === 'creative' ? 'assets/video-hero.mp4' : 'assets/video2-hero.mp4';
+    const source = video.querySelector('source');
+    const currentSrc = source?.getAttribute('src') || '';
+
+    if (source && !currentSrc.endsWith(newSrc.split('/').pop())) {
+      source.setAttribute('src', newSrc);
+      video.load();
+      video.play().catch(() => {}); // autoplay pode ser bloqueado, ignora erro
+    }
+
     video.style.filter = t === 'creative'
       ? 'hue-rotate(200deg) saturate(0.8) brightness(0.45)'
       : 'brightness(0.45) saturate(0.7)';
