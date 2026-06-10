@@ -1,27 +1,11 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — main.js  (ES module)
-   v5 — fixes: theme switch, video hero, checkout overlay, cache
+   v6 — fix: tema sempre clicável (resiliente a falhas externas),
+        vídeo hero, checkout overlay, cache automático
    ═══════════════════════════════════════════════════════════ */
 
-import * as THREE from 'three';
-import { initializeApp }   from 'firebase/app';
-import { getFirestore, collection, onSnapshot, query, orderBy }
-  from 'firebase/firestore';
-import { FIREBASE_CONFIG } from './firebase-config.js';
-
 /* ══════════════════════════════════════════════════════════
-   FIREBASE
-   ══════════════════════════════════════════════════════════ */
-let db = null;
-try {
-  const app = initializeApp(FIREBASE_CONFIG);
-  db = getFirestore(app);
-} catch (e) {
-  console.warn('Firebase não inicializado:', e.message);
-}
-
-/* ══════════════════════════════════════════════════════════
-   TEMA
+   TEMA — registrado primeiro, sem dependências externas
    ══════════════════════════════════════════════════════════ */
 const THEME = {
   decor: {
@@ -61,6 +45,65 @@ const THEME = {
 };
 
 let currentTheme = 'decor';
+
+function applyTheme(t) {
+  currentTheme = t;
+  const T = THEME[t];
+
+  const ey = document.getElementById('eyebrow');
+  if (ey) { ey.textContent = T.eyebrow; ey.className = 'glm-eyebrow ' + T.eyeClass; }
+
+  const title = document.getElementById('main-title');
+  if (title) title.className = 'glm-title ' + T.titleClass;
+
+  const btnD = document.getElementById('btn-d');
+  const btnC = document.getElementById('btn-c');
+  if (btnD) btnD.className = T.btnD;
+  if (btnC) btnC.className = T.btnC;
+
+  const dl1  = document.getElementById('dl1');
+  const dl2  = document.getElementById('dl2');
+  const dtxt = document.getElementById('dtxt');
+  if (dl1)  dl1.className   = T.dline;
+  if (dl2)  dl2.className   = T.dline;
+  if (dtxt) { dtxt.className = T.dtext; dtxt.textContent = T.divText; }
+
+  const dot  = document.getElementById('live-dot');
+  const ltxt = document.getElementById('live-text');
+  if (dot)  dot.className   = T.dot;
+  if (ltxt) ltxt.textContent = T.liveText;
+
+  const video = document.getElementById('hero-video');
+  if (video) {
+    video.style.filter = t === 'creative'
+      ? 'hue-rotate(200deg) saturate(0.8) brightness(0.45)'
+      : 'brightness(0.45) saturate(0.7)';
+  }
+
+  window._heroSetTheme?.(t);
+  window._preview?.setTheme(t);
+
+  document.documentElement.style.setProperty('--accent',
+    t === 'creative' ? 'var(--purple)' : 'var(--green)');
+  document.documentElement.style.setProperty('--accent-d',
+    t === 'creative' ? 'var(--purple-d)' : 'var(--green-d)');
+  document.documentElement.style.setProperty('--accent-b',
+    t === 'creative' ? 'var(--purple-b)' : 'var(--green-b)');
+
+  if (window.__lastProducts !== undefined) renderGrid(window.__lastProducts);
+  subscribeFirestore();
+}
+
+// Registra os listeners de tema IMEDIATAMENTE — independente de Firebase/Three
+document.getElementById('btn-d')?.addEventListener('click', () => {
+  if (currentTheme === 'decor') return;
+  applyTheme('decor');
+});
+
+document.getElementById('btn-c')?.addEventListener('click', () => {
+  if (currentTheme === 'creative') return;
+  applyTheme('creative');
+});
 
 /* ══════════════════════════════════════════════════════════
    CARRINHO
@@ -203,7 +246,6 @@ function openCheckout() {
   if (!cart.length) return;
   closeCart();
 
-  // Preenche resumo
   const summaryEl = document.getElementById('checkout-items-summary');
   const totalEl   = document.getElementById('checkout-total-display');
   if (summaryEl) {
@@ -306,6 +348,7 @@ function openVariantModal(prod) {
     variants.forEach(v => {
       const btn = document.createElement('button');
       btn.className = 'variant-pill';
+      btn.type = 'button';
       btn.textContent = v.label + (v.price ? ` (+${fmtBRL(v.price - (prod.price || 0))})` : '');
       btn.addEventListener('click', () => {
         pills.querySelectorAll('.variant-pill').forEach(b => b.classList.remove('active'));
@@ -337,7 +380,6 @@ function openVariantModal(prod) {
   };
 
   ov.style.display = 'flex';
-  // Garante animação
   requestAnimationFrame(() => ov.classList.add('open'));
 }
 
@@ -417,14 +459,22 @@ function initCanvasHero() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   THREE.JS PREVIEW
+   THREE.JS PREVIEW — carregado dinamicamente, não bloqueia o resto
    ══════════════════════════════════════════════════════════ */
 const PREV_COLORS = { decor: 0x5eca8a, creative: 0xc9a6ff };
 
-function initThreePreview() {
+async function initThreePreview() {
   const wrap = document.getElementById('preview-3d');
   const cvs  = document.getElementById('preview-canvas');
   if (!wrap || !cvs) return;
+
+  let THREE;
+  try {
+    THREE = await import('three');
+  } catch (e) {
+    console.warn('Three.js não carregado — preview 3D desabilitado:', e.message);
+    return;
+  }
 
   const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true, alpha: true });
   renderer.setSize(160, 160);
@@ -500,65 +550,9 @@ function initThreePreview() {
       mesh.children.forEach(c => { if (c.material?.wireframe) c.material.color.setHex(col); });
     }
   };
-}
 
-/* ══════════════════════════════════════════════════════════
-   APPLY THEME — FIX PRINCIPAL
-   ══════════════════════════════════════════════════════════ */
-function applyTheme(t) {
-  currentTheme = t;
-  const T = THEME[t];
-
-  // Eyebrow
-  const ey = document.getElementById('eyebrow');
-  if (ey) { ey.textContent = T.eyebrow; ey.className = 'glm-eyebrow ' + T.eyeClass; }
-
-  // Título
-  const title = document.getElementById('main-title');
-  if (title) title.className = 'glm-title ' + T.titleClass;
-
-  // Botões seletores
-  const btnD = document.getElementById('btn-d');
-  const btnC = document.getElementById('btn-c');
-  if (btnD) btnD.className = T.btnD;
-  if (btnC) btnC.className = T.btnC;
-
-  // Divisor
-  const dl1  = document.getElementById('dl1');
-  const dl2  = document.getElementById('dl2');
-  const dtxt = document.getElementById('dtxt');
-  if (dl1)  dl1.className   = T.dline;
-  if (dl2)  dl2.className   = T.dline;
-  if (dtxt) { dtxt.className = T.dtext; dtxt.textContent = T.divText; }
-
-  // Live badge
-  const dot  = document.getElementById('live-dot');
-  const ltxt = document.getElementById('live-text');
-  if (dot)  dot.className   = T.dot;
-  if (ltxt) ltxt.textContent = T.liveText;
-
-  // Vídeo hero — filtro de cor para o tema
-  const video = document.getElementById('hero-video');
-  if (video) {
-    video.style.filter = t === 'creative'
-      ? 'hue-rotate(200deg) saturate(0.8) brightness(0.45)'
-      : 'brightness(0.45) saturate(0.7)';
-  }
-
-  // Canvas e preview 3D
-  window._heroSetTheme?.(t);
-  window._preview?.setTheme(t);
-
-  // Cor do checkout e carrinho seguem o tema
-  document.documentElement.style.setProperty('--accent',
-    t === 'creative' ? 'var(--purple)' : 'var(--green)');
-  document.documentElement.style.setProperty('--accent-d',
-    t === 'creative' ? 'var(--purple-d)' : 'var(--green-d)');
-  document.documentElement.style.setProperty('--accent-b',
-    t === 'creative' ? 'var(--purple-b)' : 'var(--green-b)');
-
-  // Re-renderiza grid se já tiver produtos
-  if (window.__lastProducts !== undefined) renderGrid(window.__lastProducts);
+  // Aplica o tema atual assim que o preview estiver pronto
+  window._preview.setTheme(currentTheme);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -585,7 +579,7 @@ function makeCard(prod, idx) {
       <div class="${T.price}">${fmtBRL(prod.price ?? 0)}</div>
       ${prod.description ? `<div class="card-desc">${prod.description}</div>` : ''}
     </div>
-    <button class="card-add-btn">${btnLabel}</button>`;
+    <button type="button" class="card-add-btn">${btnLabel}</button>`;
 
   card.querySelector('.card-add-btn').addEventListener('click', e => {
     e.stopPropagation();
@@ -622,7 +616,7 @@ function renderGrid(products) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   FIRESTORE  — com timeout de fallback
+   FIRESTORE  — carregado dinamicamente, com fallback DEMO
    ══════════════════════════════════════════════════════════ */
 const DEMO = [
   { id:'1', name:'Quadro Minimalista', price:189, badge:'NOVO', emoji:'🖼️', description:'Arte exclusiva para sua sala',     category:'decor'    },
@@ -641,10 +635,29 @@ function demoFiltered() {
   );
 }
 
+let db = null;
+let firestoreReady = false;
 let unsub = null;
 let fallbackTimer = null;
 
-function subscribeFirestore() {
+async function initFirebase() {
+  try {
+    const [{ initializeApp }, { getFirestore }, { FIREBASE_CONFIG }] = await Promise.all([
+      import('firebase/app'),
+      import('firebase/firestore'),
+      import('./firebase-config.js'),
+    ]);
+    const app = initializeApp(FIREBASE_CONFIG);
+    db = getFirestore(app);
+    firestoreReady = true;
+  } catch (e) {
+    console.warn('Firebase não inicializado — usando dados demo:', e.message);
+    db = null;
+    firestoreReady = false;
+  }
+}
+
+async function subscribeFirestore() {
   if (unsub) { unsub(); unsub = null; }
   clearTimeout(fallbackTimer);
 
@@ -656,17 +669,18 @@ function subscribeFirestore() {
   if (empty)   empty.style.display   = 'none';
 
   if (!db) {
-    // Pequeno delay para mostrar o loading breve antes do demo
     setTimeout(() => renderGrid(demoFiltered()), 300);
     return;
   }
 
-  fallbackTimer = setTimeout(() => {
-    console.warn('Firestore timeout — usando dados demo');
-    renderGrid(demoFiltered());
-  }, 5000);
-
   try {
+    const { collection, onSnapshot, query, orderBy } = await import('firebase/firestore');
+
+    fallbackTimer = setTimeout(() => {
+      console.warn('Firestore timeout — usando dados demo');
+      renderGrid(demoFiltered());
+    }, 5000);
+
     const ref = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
     unsub = onSnapshot(ref, snap => {
       clearTimeout(fallbackTimer);
@@ -690,39 +704,20 @@ function subscribeFirestore() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   INIT — event listeners
+   INIT — event listeners (carrinho, checkout, pagamento etc.)
    ══════════════════════════════════════════════════════════ */
-
-// Seletores de tema
-document.getElementById('btn-d')?.addEventListener('click', () => {
-  if (currentTheme === 'decor') return; // já ativo
-  applyTheme('decor');
-  subscribeFirestore();
-});
-
-document.getElementById('btn-c')?.addEventListener('click', () => {
-  if (currentTheme === 'creative') return; // já ativo
-  applyTheme('creative');
-  subscribeFirestore();
-});
-
-// Carrinho
 document.getElementById('cart-fab')?.addEventListener('click', openCart);
 document.getElementById('cart-overlay')?.addEventListener('click', closeCart);
 document.getElementById('cart-close-btn')?.addEventListener('click', closeCart);
 
-// Checkout — abre overlay, NÃO redireciona
 document.getElementById('btn-checkout')?.addEventListener('click', () => {
   if (!cart.length) return;
   openCheckout();
 });
 
 document.getElementById('checkout-back')?.addEventListener('click', closeCheckout);
-
-// Enviar pedido via WhatsApp
 document.getElementById('btn-send-order')?.addEventListener('click', sendOrder);
 
-// Pagamento
 document.querySelectorAll('.pay-opt').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.pay-opt').forEach(b => b.classList.remove('pay-opt-active'));
@@ -731,7 +726,6 @@ document.querySelectorAll('.pay-opt').forEach(btn => {
   });
 });
 
-// Entrega
 document.querySelectorAll('input[name="delivery"]').forEach(radio => {
   radio.addEventListener('change', () => {
     selectedDelivery = radio.value;
@@ -740,10 +734,13 @@ document.querySelectorAll('input[name="delivery"]').forEach(radio => {
   });
 });
 
-// Inicia
+/* ══════════════════════════════════════════════════════════
+   BOOT
+   ══════════════════════════════════════════════════════════ */
 applyTheme('decor');
 initCanvasHero();
 initThreePreview();
 renderCart();
 updateCartFab();
-subscribeFirestore();
+
+initFirebase().then(() => subscribeFirestore());
