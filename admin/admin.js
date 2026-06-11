@@ -1,14 +1,14 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — admin.js  (ES module)
-   Auth Google · Firestore CRUD · Cloudinary upload
-   v2 — fix: caminho correto do firebase-config.js (raiz),
-        captura completa de erros de autenticação,
-        inicialização resiliente com erro visível na tela
+   FIX v3:
+   · boot() carrega firebase SEQUENCIALMENTE antes de bindar o botão
+   · signInWithPopup chamado direto no click handler (sem await prévio)
+     — isso evita o bloqueio de popup por "gesto do usuário perdido"
+   · modal usa classList.add/remove('open') em vez de style.display
+   · view-login usa classList.add/remove('hidden') + display:none no CSS
    ═══════════════════════════════════════════════════════════ */
 
-/* ══════════════════════════════════════════════════════════
-   DOM REFS — registrados primeiro, sem dependências externas
-   ══════════════════════════════════════════════════════════ */
+/* ── DOM REFS ──────────────────────────────────────────────── */
 const $ = id => document.getElementById(id);
 
 const viewLogin   = $('view-login');
@@ -46,167 +46,163 @@ const modalConfirm    = $('modal-confirm');
 const btnGoogleLogin  = $('btn-google-login');
 const btnLogout       = $('btn-logout');
 
-/* ══════════════════════════════════════════════════════════
-   STATE
-   ══════════════════════════════════════════════════════════ */
-let allProducts      = [];
-let filterCat        = 'all';
-let searchQuery      = '';
-let pendingDeleteId  = null;
-let unsubProducts    = null;
-let selectedFile     = null;
+/* ── STATE ─────────────────────────────────────────────────── */
+let allProducts     = [];
+let filterCat       = 'all';
+let searchQuery     = '';
+let pendingDeleteId = null;
+let unsubProducts   = null;
+let selectedFile    = null;
 
-let auth = null;
-let db   = null;
-let CLOUDINARY = null;
-let ALLOWED_EMAILS = [];
-
-/* ══════════════════════════════════════════════════════════
-   HELPERS (definidos cedo — usados no boot e no resto)
-   ══════════════════════════════════════════════════════════ */
+/* ── HELPERS ───────────────────────────────────────────────── */
 function setStatus(msg, type) {
   if (!formStatus) return;
   formStatus.textContent = msg;
-  formStatus.className   = 'form-status ' + (type === 'ok' ? 'status-ok' : type === 'err' ? 'status-err' : '');
+  formStatus.className   = 'form-status'
+    + (type === 'ok'  ? ' status-ok'  : '')
+    + (type === 'err' ? ' status-err' : '');
 }
 
 function showToast(msg, type) {
   const area = $('toast-area') || document.body;
   const t = document.createElement('div');
-  t.className = `toast toast-${type}`;
+  t.className = `toast ${type === 'ok' ? 'ok' : 'err'}`;
   t.innerHTML = `<span>${type === 'ok' ? '✅' : '❌'}</span> ${msg}`;
   area.appendChild(t);
   setTimeout(() => t.remove(), 3500);
 }
 
-/* ══════════════════════════════════════════════════════════
-   BOOT — inicializa Firebase. Se falhar, mostra erro na tela
-   em vez de travar o módulo inteiro silenciosamente.
-   ══════════════════════════════════════════════════════════ */
+function showLogin() {
+  viewLogin.classList.remove('hidden');
+  viewPanel.classList.remove('visible');
+  adminNav.style.display = 'none';
+}
+
+function showPanel() {
+  viewLogin.classList.add('hidden');
+  viewPanel.classList.add('visible');
+  adminNav.style.display = '';
+}
+
+/* ── BOOT ──────────────────────────────────────────────────── */
 async function boot() {
-  let initializeApp, getFirestore, getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged;
-  let FIREBASE_CONFIG;
+
+  /* 1. Importa tudo antes de qualquer interação */
+  let firebaseApp, firestoreMod, authMod, config;
 
   try {
-    [
-      { initializeApp },
-      { getFirestore },
-      { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged },
-      { FIREBASE_CONFIG, ALLOWED_EMAILS: allowed, CLOUDINARY: cloud }
-    ] = await Promise.all([
+    [firebaseApp, firestoreMod, authMod, config] = await Promise.all([
       import('firebase/app'),
       import('firebase/firestore'),
       import('firebase/auth'),
-      // Caminho correto: admin.js está em admin/, firebase-config.js está na raiz
-      import('../firebase-config.js'),
+      import('../firebase-config.js'),   // raiz do projeto
     ]);
-    ALLOWED_EMAILS = allowed || [];
-    CLOUDINARY     = cloud || null;
-  } catch (e) {
-    console.error('Falha ao carregar dependências:', e);
-    if (loginError) {
-      loginError.textContent = '❌ Erro ao carregar configuração: ' + e.message;
-    }
+  } catch (err) {
+    console.error('[boot] Falha ao importar módulos:', err);
+    loginError.textContent = '❌ Erro ao carregar configuração: ' + err.message;
     return;
   }
 
-  let app;
+  const { initializeApp }                              = firebaseApp;
+  const { getFirestore, collection, addDoc, updateDoc,
+          deleteDoc, doc, onSnapshot, query,
+          orderBy, serverTimestamp }                   = firestoreMod;
+  const { getAuth, GoogleAuthProvider,
+          signInWithPopup, signOut,
+          onAuthStateChanged }                         = authMod;
+  const { FIREBASE_CONFIG, ALLOWED_EMAILS = [],
+          CLOUDINARY = null }                          = config;
+
+  /* 2. Inicializa Firebase */
+  let app, db, auth;
   try {
     app  = initializeApp(FIREBASE_CONFIG);
     db   = getFirestore(app);
     auth = getAuth(app);
-  } catch (e) {
-    console.error('Falha ao inicializar Firebase:', e);
-    if (loginError) {
-      loginError.textContent = '❌ Erro ao inicializar Firebase: ' + e.message;
-    }
+  } catch (err) {
+    console.error('[boot] Falha ao inicializar Firebase:', err);
+    loginError.textContent = '❌ Erro ao inicializar Firebase: ' + err.message;
     return;
   }
 
-  /* ══════════════════════════════════════════════════════
-     AUTH — listeners
-     ══════════════════════════════════════════════════════ */
-  btnGoogleLogin?.addEventListener('click', async () => {
-    if (loginError) loginError.textContent = '';
+  /* ── AUTH: botão Google ─────────────────────────────────── */
+  /*
+     IMPORTANTE: o handler é síncrono até a chamada do signInWithPopup.
+     Qualquer await ANTES de signInWithPopup faz o navegador perder o
+     "gesto do usuário" e bloqueia o popup. Por isso todos os imports
+     ficam no boot() acima, e o handler apenas chama a função.
+  */
+  btnGoogleLogin?.addEventListener('click', () => {
+    loginError.textContent  = '';
     btnGoogleLogin.disabled = true;
-    try {
-      const provider = new GoogleAuthProvider();
-      const result   = await signInWithPopup(auth, provider);
-      const email    = result.user.email;
-      if (!ALLOWED_EMAILS.includes(email)) {
-        await signOut(auth);
-        if (loginError) loginError.textContent = `❌ ${email} não tem permissão de acesso.`;
-      }
-    } catch (e) {
-      console.error('Erro de login:', e.code, e.message);
-      if (!loginError) {
+
+    const provider = new GoogleAuthProvider();
+
+    signInWithPopup(auth, provider)
+      .then(result => {
+        const email = result.user.email;
+        if (!ALLOWED_EMAILS.includes(email)) {
+          return signOut(auth).then(() => {
+            loginError.textContent = `❌ ${email} não tem permissão de acesso.`;
+          });
+        }
+        // onAuthStateChanged cuida do resto
+      })
+      .catch(err => {
+        console.error('[login]', err.code, err.message);
+        switch (err.code) {
+          case 'auth/popup-closed-by-user':
+          case 'auth/cancelled-popup-request':
+            break;
+          case 'auth/popup-blocked':
+            loginError.textContent = '❌ Popup bloqueado. Permita popups para este site e tente novamente.';
+            break;
+          case 'auth/unauthorized-domain':
+            loginError.textContent = '❌ Domínio não autorizado no Firebase (Authentication → Authorized domains).';
+            break;
+          case 'auth/operation-not-allowed':
+            loginError.textContent = '❌ Login com Google não está habilitado no Firebase Auth.';
+            break;
+          default:
+            loginError.textContent = '❌ Erro ao autenticar: ' + (err.message || err.code);
+        }
+      })
+      .finally(() => {
         btnGoogleLogin.disabled = false;
-        return;
-      }
-      switch (e.code) {
-        case 'auth/popup-closed-by-user':
-          // usuário fechou — não mostra erro
-          break;
-        case 'auth/popup-blocked':
-          loginError.textContent = '❌ O navegador bloqueou o popup. Permita popups para este site e tente novamente.';
-          break;
-        case 'auth/cancelled-popup-request':
-          break;
-        case 'auth/unauthorized-domain':
-          loginError.textContent = '❌ Este domínio não está autorizado no Firebase Auth (adicione em Authentication → Settings → Authorized domains).';
-          break;
-        case 'auth/operation-not-allowed':
-          loginError.textContent = '❌ Login com Google não está habilitado no Firebase Auth.';
-          break;
-        default:
-          loginError.textContent = '❌ Erro ao autenticar: ' + (e.message || e.code || 'desconhecido');
-      }
-    } finally {
-      btnGoogleLogin.disabled = false;
-    }
+      });
   });
 
   btnLogout?.addEventListener('click', () => signOut(auth));
 
+  /* ── AUTH STATE ─────────────────────────────────────────── */
   onAuthStateChanged(auth, user => {
     if (user && ALLOWED_EMAILS.includes(user.email)) {
-      if (viewLogin) viewLogin.style.display = 'none';
-      if (viewPanel) { viewPanel.style.display = ''; viewPanel.classList.add('visible'); }
-      if (adminNav)  adminNav.style.display  = '';
+      showPanel();
       startProductListener();
     } else {
-      if (viewLogin) viewLogin.style.display = '';
-      if (viewPanel) { viewPanel.style.display = 'none'; viewPanel.classList.remove('visible'); }
-      if (adminNav)  adminNav.style.display  = 'none';
+      showLogin();
       if (unsubProducts) { unsubProducts(); unsubProducts = null; }
-      if (user) signOut(auth);
+      allProducts = [];
+      renderList();
+      if (user) signOut(auth);   // desconecta e-mail não autorizado
     }
   });
 
-  /* ══════════════════════════════════════════════════════
-     FIRESTORE LISTENER
-     ══════════════════════════════════════════════════════ */
-  async function startProductListener() {
+  /* ── FIRESTORE LISTENER ─────────────────────────────────── */
+  function startProductListener() {
     if (unsubProducts) return;
-    const { collection, onSnapshot, query, orderBy } = await import('firebase/firestore');
     const ref = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
     unsubProducts = onSnapshot(ref, snap => {
       allProducts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderList();
     }, err => {
-      console.error('Firestore erro:', err);
+      console.error('[firestore]', err);
       showToast('Erro ao carregar produtos.', 'err');
     });
   }
 
-  /* ══════════════════════════════════════════════════════
-     SALVAR PRODUTO
-     ══════════════════════════════════════════════════════ */
-  btnSave?.addEventListener('click', saveProduct);
-
-  async function saveProduct() {
-    const { collection, addDoc, updateDoc, doc, serverTimestamp } = await import('firebase/firestore');
-
+  /* ── SALVAR PRODUTO ─────────────────────────────────────── */
+  btnSave?.addEventListener('click', async () => {
     const name  = fName.value.trim();
     const price = fPrice.value.trim();
     const cat   = document.querySelector('input[name="cat"]:checked')?.value || 'decor';
@@ -221,8 +217,9 @@ async function boot() {
       let imageUrl = fEditImgUrl.value || '';
 
       if (selectedFile) {
+        if (!CLOUDINARY) throw new Error('Configuração Cloudinary ausente no firebase-config.js');
         setStatus('Enviando imagem… 0%', '');
-        imageUrl = await uploadToCloudinary(selectedFile, pct => {
+        imageUrl = await uploadToCloudinary(selectedFile, CLOUDINARY, pct => {
           setStatus(`Enviando imagem… ${pct}%`, '');
         });
       }
@@ -248,47 +245,46 @@ async function boot() {
       }
 
       resetForm();
-    } catch (e) {
-      console.error(e);
-      setStatus('Erro: ' + e.message, 'err');
+      setStatus('Salvo com sucesso!', 'ok');
+    } catch (err) {
+      console.error('[save]', err);
+      setStatus('Erro: ' + err.message, 'err');
     } finally {
       btnSave.disabled = false;
     }
-  }
+  });
 
-  /* ══════════════════════════════════════════════════════
-     DELETAR
-     ══════════════════════════════════════════════════════ */
+  /* ── DELETAR ────────────────────────────────────────────── */
   modalConfirm?.addEventListener('click', async () => {
     if (!pendingDeleteId) return;
-    const { deleteDoc, doc } = await import('firebase/firestore');
-    modalDelete.style.display = 'none';
+    modalDelete.classList.remove('open');
     try {
       await deleteDoc(doc(db, 'products', pendingDeleteId));
       showToast('Produto excluído.', 'ok');
-    } catch (e) {
-      showToast('Erro ao excluir: ' + e.message, 'err');
+    } catch (err) {
+      showToast('Erro ao excluir: ' + err.message, 'err');
     }
     pendingDeleteId = null;
   });
 }
 
-/* ══════════════════════════════════════════════════════════
-   RENDER LIST
-   ══════════════════════════════════════════════════════════ */
+/* ── RENDER LIST ───────────────────────────────────────────── */
 function renderList() {
   const q = searchQuery.toLowerCase();
   const filtered = allProducts.filter(p => {
-    const matchCat = filterCat === 'all' || p.category === filterCat || (!p.category && filterCat === 'decor');
-    const matchQ   = !q || p.name?.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q);
+    const matchCat = filterCat === 'all'
+      || p.category === filterCat
+      || (!p.category && filterCat === 'decor');
+    const matchQ = !q
+      || p.name?.toLowerCase().includes(q)
+      || p.description?.toLowerCase().includes(q);
     return matchCat && matchQ;
   });
 
   listCount.textContent = `${filtered.length} produto${filtered.length !== 1 ? 's' : ''}`;
 
   if (!filtered.length) {
-    productList.innerHTML = `<div class="empty-state" style="padding:32px 0">
-      <p>Nenhum produto encontrado.</p></div>`;
+    productList.innerHTML = `<div class="empty-state"><p>Nenhum produto encontrado.</p></div>`;
     return;
   }
 
@@ -297,49 +293,41 @@ function renderList() {
     const item = document.createElement('div');
     item.className = 'product-item';
 
-    const thumb = document.createElement('div');
-    thumb.className = 'product-item-thumb';
-    if (p.imageUrl) {
-      const img = document.createElement('img');
-      img.src = p.imageUrl; img.alt = p.name;
-      thumb.appendChild(img);
-    } else {
-      thumb.textContent = p.emoji || '📦';
-    }
+    const thumbInner = p.imageUrl
+      ? `<img src="${p.imageUrl}" alt="${p.name}" loading="lazy"/>`
+      : (p.emoji || '📦');
 
     const catLabel = p.category === 'creative' ? '✦ Creative' : '🌿 Decor';
-    const price    = p.price != null
+    const price = p.price != null
       ? 'R$ ' + Number(p.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
       : '—';
 
     item.innerHTML = `
-      ${thumb.outerHTML}
-      <div class="product-item-info">
-        <div class="product-item-name">${p.name}</div>
-        <div class="product-item-meta">
-          <span class="product-item-price">${price}</span>
-          <span>${catLabel}</span>
-          ${p.badge ? `<span>${p.badge}</span>` : ''}
+      <div class="product-thumb">${thumbInner}</div>
+      <div class="product-info">
+        <div class="product-name">${p.name}</div>
+        <div class="product-meta">
+          <span class="product-price">${price}</span>
+          <span class="product-cat">${catLabel}</span>
+          ${p.badge ? `<span style="font-size:8.5px;opacity:.4;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px">${p.badge}</span>` : ''}
         </div>
       </div>
-      <div class="product-item-actions">
+      <div class="product-actions">
         <button class="btn-icon" data-edit="${p.id}" title="Editar">✏️</button>
-        <button class="btn-icon" data-delete="${p.id}" data-name="${p.name}" title="Excluir">🗑️</button>
+        <button class="btn-icon" data-del="${p.id}" title="Excluir">🗑️</button>
       </div>`;
 
-    item.querySelector('[data-edit]').addEventListener('click',   () => openEdit(p));
-    item.querySelector('[data-delete]').addEventListener('click', () => openDelete(p));
+    item.querySelector('[data-edit]').addEventListener('click', () => openEdit(p));
+    item.querySelector('[data-del]').addEventListener('click',  () => openDelete(p));
     productList.appendChild(item);
   });
 }
 
-/* ══════════════════════════════════════════════════════════
-   FILTROS
-   ══════════════════════════════════════════════════════════ */
+/* ── FILTROS ───────────────────────────────────────────────── */
 filterBtns.forEach(btn => {
   btn.addEventListener('click', () => {
-    filterBtns.forEach(b => b.classList.remove('filter-active', 'active'));
-    btn.classList.add('filter-active', 'active');
+    filterBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
     filterCat = btn.dataset.filter;
     renderList();
   });
@@ -350,10 +338,11 @@ searchInput?.addEventListener('input', () => {
   renderList();
 });
 
-/* ══════════════════════════════════════════════════════════
-   UPLOAD DE IMAGEM — CLOUDINARY (sem Firebase Storage)
-   ══════════════════════════════════════════════════════════ */
-uploadZone?.addEventListener('click', () => fileInput.click());
+/* ── UPLOAD IMAGEM ─────────────────────────────────────────── */
+uploadZone?.addEventListener('click', e => {
+  if (e.target === btnClearImg) return;
+  fileInput.click();
+});
 
 uploadZone?.addEventListener('dragover', e => {
   e.preventDefault();
@@ -382,11 +371,10 @@ function setPreviewFile(file) {
   if (!file.type.startsWith('image/')) { showToast('Arquivo inválido.', 'err'); return; }
   if (file.size > 10 * 1024 * 1024)   { showToast('Imagem muito grande (máx 10MB).', 'err'); return; }
   selectedFile = file;
-  const url = URL.createObjectURL(file);
-  imgPreview.src = url;
-  imgPreview.style.display     = 'block';
+  imgPreview.src = URL.createObjectURL(file);
+  imgPreview.style.display        = 'block';
   uploadPlaceholder.style.display = 'none';
-  btnClearImg.style.display    = 'flex';
+  btnClearImg.style.display       = 'flex';
   uploadZone.classList.add('has-preview');
 }
 
@@ -400,58 +388,45 @@ function clearImagePreview() {
   uploadZone.classList.remove('has-preview');
 }
 
-/**
- * Faz upload para o Cloudinary via unsigned preset.
- * Retorna a URL segura da imagem.
- */
-async function uploadToCloudinary(file, onProgress) {
-  if (!CLOUDINARY) throw new Error('Configuração do Cloudinary ausente.');
+async function uploadToCloudinary(file, cloudinary, onProgress) {
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('upload_preset', CLOUDINARY.uploadPreset);
+  formData.append('upload_preset', cloudinary.uploadPreset);
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUDINARY.cloudName}/image/upload`);
+    xhr.open('POST', `https://api.cloudinary.com/v1_1/${cloudinary.cloudName}/image/upload`);
 
     xhr.upload.onprogress = e => {
-      if (e.lengthComputable && onProgress) {
+      if (e.lengthComputable && onProgress)
         onProgress(Math.round(e.loaded / e.total * 100));
-      }
     };
-
     xhr.onload = () => {
       try {
         const res = JSON.parse(xhr.responseText);
-        if (res.secure_url) resolve(res.secure_url);
-        else reject(new Error(res.error?.message || 'Upload falhou'));
-      } catch (e) {
-        reject(e);
-      }
+        res.secure_url ? resolve(res.secure_url) : reject(new Error(res.error?.message || 'Upload falhou'));
+      } catch (e) { reject(e); }
     };
-
     xhr.onerror = () => reject(new Error('Erro de rede no upload'));
     xhr.send(formData);
   });
 }
 
-/* ══════════════════════════════════════════════════════════
-   EDITAR
-   ══════════════════════════════════════════════════════════ */
+/* ── EDITAR ────────────────────────────────────────────────── */
 function openEdit(p) {
-  fEditId.value      = p.id;
-  fEditImgUrl.value  = p.imageUrl || '';
-  fName.value        = p.name || '';
-  fPrice.value       = p.price ?? '';
-  fBadge.value       = p.badge || '';
-  fEmoji.value       = p.emoji || '';
-  fDesc.value        = p.description || '';
+  fEditId.value     = p.id;
+  fEditImgUrl.value = p.imageUrl || '';
+  fName.value       = p.name || '';
+  fPrice.value      = p.price ?? '';
+  fBadge.value      = p.badge || '';
+  fEmoji.value      = p.emoji || '';
+  fDesc.value       = p.description || '';
 
   const catInput = document.querySelector(`input[name="cat"][value="${p.category || 'decor'}"]`);
   if (catInput) catInput.checked = true;
 
   if (p.imageUrl) {
-    imgPreview.src = p.imageUrl;
+    imgPreview.src                  = p.imageUrl;
     imgPreview.style.display        = 'block';
     uploadPlaceholder.style.display = 'none';
     btnClearImg.style.display       = 'flex';
@@ -472,7 +447,8 @@ btnCancel?.addEventListener('click', resetForm);
 function resetForm() {
   fEditId.value = fEditImgUrl.value = '';
   fName.value = fPrice.value = fBadge.value = fEmoji.value = fDesc.value = '';
-  document.querySelector('input[name="cat"][value="decor"]').checked = true;
+  const decor = document.querySelector('input[name="cat"][value="decor"]');
+  if (decor) decor.checked = true;
   clearImagePreview();
   formTitle.textContent   = 'ADICIONAR PRODUTO';
   btnSave.textContent     = 'SALVAR PRODUTO';
@@ -480,21 +456,25 @@ function resetForm() {
   setStatus('', '');
 }
 
-/* ══════════════════════════════════════════════════════════
-   DELETAR — abrir modal
-   ══════════════════════════════════════════════════════════ */
+/* ── MODAL DELETAR ─────────────────────────────────────────── */
 function openDelete(p) {
-  pendingDeleteId = p.id;
+  pendingDeleteId             = p.id;
   modalDeleteName.textContent = `Excluir "${p.name}"? Esta ação não pode ser desfeita.`;
-  modalDelete.style.display   = 'flex';
+  modalDelete.classList.add('open');
 }
 
 modalCancel?.addEventListener('click', () => {
-  modalDelete.style.display = 'none';
+  modalDelete.classList.remove('open');
   pendingDeleteId = null;
 });
 
-/* ══════════════════════════════════════════════════════════
-   START
-   ══════════════════════════════════════════════════════════ */
+/* fecha modal ao clicar fora da caixa */
+modalDelete?.addEventListener('click', e => {
+  if (e.target === modalDelete) {
+    modalDelete.classList.remove('open');
+    pendingDeleteId = null;
+  }
+});
+
+/* ── INICIAR ───────────────────────────────────────────────── */
 boot();
