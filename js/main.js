@@ -2,6 +2,7 @@
    GLM UNIVERSE — main.js  (ES module)
    v6 — fix: tema sempre clicável (resiliente a falhas externas),
         vídeo hero, checkout overlay, cache automático
+   v6.1 — fix: produtos do tema correto sempre visíveis ao trocar tema
    ═══════════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════════
@@ -101,6 +102,7 @@ function applyTheme(t) {
   document.documentElement.style.setProperty('--accent-b',
     t === 'creative' ? 'var(--purple-b)' : 'var(--green-b)');
 
+  // Re-renderiza com todos os produtos guardados, aplicando o novo filtro de tema
   if (window.__lastProducts !== undefined) renderGrid(window.__lastProducts);
   subscribeFirestore();
 }
@@ -607,15 +609,31 @@ function makeCard(prod, idx) {
   return card;
 }
 
+/* ══════════════════════════════════════════════════════════
+   RENDER GRID
+   FIX v6.1: o filtro de tema é aplicado AQUI, não no snapshot.
+   __lastProducts guarda TODOS os produtos sem filtro,
+   permitindo re-filtrar corretamente ao trocar de tema.
+   ══════════════════════════════════════════════════════════ */
 function renderGrid(products) {
-  window.__lastProducts = products;
+  // Guarda todos os produtos (sem filtro) para re-uso ao trocar tema
+  const _all = products || [];
+  window.__lastProducts = _all;
+
+  // Aplica o filtro de tema na renderização
+  const filtered = _all.filter(p =>
+    currentTheme === 'creative'
+      ? p.category === 'creative'
+      : p.category === 'decor' || !p.category
+  );
+
   const grid    = document.getElementById('grid');
   const loading = document.getElementById('loading-state');
   const empty   = document.getElementById('empty-state');
 
   if (loading) loading.style.display = 'none';
 
-  if (!products?.length) {
+  if (!filtered.length) {
     if (grid)  grid.style.display  = 'none';
     if (empty) empty.style.display = 'block';
     return;
@@ -623,7 +641,7 @@ function renderGrid(products) {
   if (empty) empty.style.display = 'none';
   if (grid)  grid.style.display  = 'grid';
   grid.innerHTML = '';
-  products.forEach((p, i) => grid.appendChild(makeCard(p, i)));
+  filtered.forEach((p, i) => grid.appendChild(makeCard(p, i)));
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -639,12 +657,6 @@ const DEMO = [
   { id:'7', name:'Scene Kit Vol.1',    price:180, badge:'NEW',  emoji:'🌐', description:'5 ambientes prontos para render',  category:'creative' },
   { id:'8', name:'Shader Pack',        price:89,                emoji:'✨', description:'20 materiais PBR otimizados',      category:'creative' },
 ];
-
-function demoFiltered() {
-  return DEMO.filter(p =>
-    currentTheme === 'creative' ? p.category === 'creative' : p.category === 'decor' || !p.category
-  );
-}
 
 let db = null;
 let firestoreReady = false;
@@ -680,7 +692,7 @@ async function subscribeFirestore() {
   if (empty)   empty.style.display   = 'none';
 
   if (!db) {
-    setTimeout(() => renderGrid(demoFiltered()), 300);
+    setTimeout(() => renderGrid(DEMO), 300);
     return;
   }
 
@@ -689,28 +701,27 @@ async function subscribeFirestore() {
 
     fallbackTimer = setTimeout(() => {
       console.warn('Firestore timeout — usando dados demo');
-      renderGrid(demoFiltered());
+      renderGrid(DEMO);
     }, 5000);
 
     const ref = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
+
+    // FIX v6.1: snapshot entrega TODOS os produtos sem filtrar por tema.
+    // O filtro acontece dentro de renderGrid(), que usa currentTheme no momento
+    // da chamada — assim trocar de tema re-filtra corretamente sem novo fetch.
     unsub = onSnapshot(ref, snap => {
       clearTimeout(fallbackTimer);
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const filtered = all.filter(p =>
-        currentTheme === 'creative'
-          ? p.category === 'creative'
-          : p.category === 'decor' || !p.category
-      );
-      renderGrid(filtered.length ? filtered : (all.length ? [] : demoFiltered()));
+      renderGrid(all.length ? all : DEMO);
     }, err => {
       clearTimeout(fallbackTimer);
       console.warn('Firestore erro:', err.message);
-      renderGrid(demoFiltered());
+      renderGrid(DEMO);
     });
   } catch (e) {
     clearTimeout(fallbackTimer);
     console.warn('Firestore falhou:', e.message);
-    renderGrid(demoFiltered());
+    renderGrid(DEMO);
   }
 }
 
