@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — main.js  (ES module)
-   v7 — preview 3D: carrega modelo .glb via GLTFLoader quando
-        disponível, fallback para formas geométricas
+   v6 — fix: tema sempre clicável (resiliente a falhas externas),
+        vídeo hero, checkout overlay, cache automático
+   v6.1 — fix: produtos do tema correto sempre visíveis ao trocar tema
    ═══════════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════════
@@ -83,7 +84,7 @@ function applyTheme(t) {
     if (source && !currentSrc.endsWith(newSrc.split('/').pop())) {
       source.setAttribute('src', newSrc);
       video.load();
-      video.play().catch(() => {});
+      video.play().catch(() => {}); // autoplay pode ser bloqueado, ignora erro
     }
 
     video.style.filter = t === 'creative'
@@ -101,10 +102,12 @@ function applyTheme(t) {
   document.documentElement.style.setProperty('--accent-b',
     t === 'creative' ? 'var(--purple-b)' : 'var(--green-b)');
 
+  // Re-renderiza com todos os produtos guardados, aplicando o novo filtro de tema
   if (window.__lastProducts !== undefined) renderGrid(window.__lastProducts);
   subscribeFirestore();
 }
 
+// Registra os listeners de tema IMEDIATAMENTE — independente de Firebase/Three
 document.getElementById('btn-d')?.addEventListener('click', () => {
   if (currentTheme === 'decor') return;
   applyTheme('decor');
@@ -314,6 +317,7 @@ function sendOrder() {
     notes ? `*Obs:* ${notes}` : null,
   ].filter(l => l !== null).join('\n');
 
+  // Número do WhatsApp do lojista — ajuste aqui
   const waNumber = '5561999999999';
   const url = `https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`;
   window.open(url, '_blank');
@@ -468,8 +472,7 @@ function initCanvasHero() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   THREE.JS PREVIEW — suporta modelo .glb via GLTFLoader
-   com fallback para formas geométricas
+   THREE.JS PREVIEW — carregado dinamicamente, não bloqueia o resto
    ══════════════════════════════════════════════════════════ */
 const PREV_COLORS = { decor: 0x5eca8a, creative: 0xc9a6ff };
 
@@ -478,17 +481,9 @@ async function initThreePreview() {
   const cvs  = document.getElementById('preview-canvas');
   if (!wrap || !cvs) return;
 
-  let THREE, GLTFLoader;
+  let THREE;
   try {
     THREE = await import('three');
-    // Tenta carregar GLTFLoader — não quebra se falhar
-    try {
-      const gltfMod = await import('three/addons/loaders/GLTFLoader.js');
-      GLTFLoader = gltfMod.GLTFLoader;
-    } catch(e) {
-      console.warn('GLTFLoader não disponível, usando apenas formas geométricas:', e.message);
-      GLTFLoader = null;
-    }
   } catch (e) {
     console.warn('Three.js não carregado — preview 3D desabilitado:', e.message);
     return;
@@ -517,28 +512,9 @@ async function initThreePreview() {
   ];
 
   let mesh = null, raf = null, visible = false, pTheme = 'decor';
-  // Cache de modelos já carregados: url -> THREE.Group
-  const modelCache = {};
 
-  /* ── Limpa cena (mesh ou grupo GLB) ── */
-  function clearScene() {
-    if (mesh) {
-      scene.remove(mesh);
-      // dispose recursivo
-      mesh.traverse(obj => {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-          else obj.material.dispose();
-        }
-      });
-      mesh = null;
-    }
-  }
-
-  /* ── Fallback: forma geométrica ── */
-  function buildGeomMesh(idx) {
-    clearScene();
+  function buildMesh(idx) {
+    if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
     const geo = SHAPES[idx % SHAPES.length]();
     const col = PREV_COLORS[pTheme];
     mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
@@ -553,66 +529,12 @@ async function initThreePreview() {
     mesh.add(wf);
   }
 
-  /* ── Carrega modelo GLB (com cache) ── */
-  function loadGLB(url, idx) {
-    if (!GLTFLoader) { buildGeomMesh(idx); return; }
-
-    // Usa cache se já foi carregado
-    if (modelCache[url]) {
-      clearScene();
-      mesh = modelCache[url].clone();
-      normalizeGLB(mesh);
-      scene.add(mesh);
-      return;
-    }
-
-    // Enquanto carrega, exibe forma geométrica
-    buildGeomMesh(idx);
-
-    const loader = new GLTFLoader();
-    loader.load(
-      url,
-      (gltf) => {
-        const group = gltf.scene;
-        modelCache[url] = group; // armazena original no cache
-        // Só substitui se este produto ainda estiver no preview
-        if (visible) {
-          clearScene();
-          mesh = group.clone();
-          normalizeGLB(mesh);
-          scene.add(mesh);
-        }
-      },
-      undefined, // onProgress — não precisamos
-      (err) => {
-        console.warn('GLB load error, mantendo forma geométrica:', err);
-        // fallback já está na cena, nada a fazer
-      }
-    );
-  }
-
-  /* ── Normaliza escala e centraliza o GLB ── */
-  function normalizeGLB(group) {
-    const box = new THREE.Box3().setFromObject(group);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const scale  = 1.8 / (maxDim || 1);
-    group.scale.setScalar(scale);
-
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-    group.position.sub(center.multiplyScalar(scale));
-  }
-
-  /* ── Loop de render ── */
   function loop() {
     raf = requestAnimationFrame(loop);
     if (mesh) { mesh.rotation.x += 0.012; mesh.rotation.y += 0.018; }
     renderer.render(scene, camera);
   }
 
-  /* ── Posicionamento do tooltip ── */
   function pos(x, y) {
     let l = x + 12, t = y + 12;
     if (l + 160 > window.innerWidth  - 8) l = x - 172;
@@ -621,29 +543,14 @@ async function initThreePreview() {
     wrap.style.top  = t + 'px';
   }
 
-  /* ── API pública ── */
   window._preview = {
-    /**
-     * @param {number} x
-     * @param {number} y
-     * @param {number} idx       — índice do produto (usado no fallback de forma)
-     * @param {string|null} modelUrl — URL do .glb ou null para forma geométrica
-     */
-    show(x, y, idx, modelUrl) {
-      pos(x, y);
+    show(x, y, idx) {
+      buildMesh(idx); pos(x, y);
       wrap.style.display = 'block';
-
-      if (modelUrl) {
-        loadGLB(modelUrl, idx);
-      } else {
-        buildGeomMesh(idx);
-      }
-
       if (!visible) { visible = true; loop(); }
     },
     hide() {
-      wrap.style.display = 'none';
-      visible = false;
+      wrap.style.display = 'none'; visible = false;
       if (raf) { cancelAnimationFrame(raf); raf = null; }
     },
     move(x, y) { if (visible) pos(x, y); },
@@ -651,19 +558,13 @@ async function initThreePreview() {
       pTheme = t;
       if (!mesh) return;
       const col = PREV_COLORS[t];
-      // Só atualiza cor em meshes geométricos (não GLB)
-      mesh.traverse(obj => {
-        if (!obj.isMesh) return;
-        if (obj.material?.wireframe) {
-          obj.material.color.setHex(col);
-        } else if (obj.material?.emissive) {
-          obj.material.color.setHex(col);
-          obj.material.emissive.setHex(col);
-        }
-      });
+      mesh.material.color.setHex(col);
+      mesh.material.emissive.setHex(col);
+      mesh.children.forEach(c => { if (c.material?.wireframe) c.material.color.setHex(col); });
     }
   };
 
+  // Aplica o tema atual assim que o preview estiver pronto
   window._preview.setTheme(currentTheme);
 }
 
@@ -681,16 +582,11 @@ function makeCard(prod, idx) {
     : `<span class="emoji-fallback">${prod.emoji || '📦'}</span>`;
   const badge = prod.badge ? `<span class="${T.badge}">${prod.badge}</span>` : '';
 
-  // Badge extra para produtos com modelo 3D
-  const badge3d = prod.model3dUrl
-    ? `<span class="${T.badge}" style="background:rgba(201,166,255,0.18);color:#c9a6ff;border-color:rgba(201,166,255,0.35)">3D</span>`
-    : '';
-
   const hasVars = prod.variations?.length > 0;
   const btnLabel = hasVars ? '+ VER OPÇÕES' : '+ ADICIONAR';
 
   card.innerHTML = `
-    <div class="${T.ci}">${img}${badge}${badge3d}</div>
+    <div class="${T.ci}">${img}${badge}</div>
     <div class="card-info">
       <div class="${T.name}">${prod.name}</div>
       <div class="${T.price}">${fmtBRL(prod.price ?? 0)}</div>
@@ -704,26 +600,27 @@ function makeCard(prod, idx) {
     else addToCart(prod);
   });
 
-  // Preview 3D: passa model3dUrl se disponível, caso contrário usa forma geométrica
   let ht;
   card.addEventListener('mouseenter', e => {
-    ht = setTimeout(() => {
-      window._preview?.show(e.clientX, e.clientY, idx, prod.model3dUrl || null);
-    }, 180);
+    ht = setTimeout(() => window._preview?.show(e.clientX, e.clientY, idx), 180);
   });
   card.addEventListener('mousemove',  e => window._preview?.move(e.clientX, e.clientY));
   card.addEventListener('mouseleave', () => { clearTimeout(ht); window._preview?.hide(); });
-
   return card;
 }
 
 /* ══════════════════════════════════════════════════════════
    RENDER GRID
+   FIX v6.1: o filtro de tema é aplicado AQUI, não no snapshot.
+   __lastProducts guarda TODOS os produtos sem filtro,
+   permitindo re-filtrar corretamente ao trocar de tema.
    ══════════════════════════════════════════════════════════ */
 function renderGrid(products) {
+  // Guarda todos os produtos (sem filtro) para re-uso ao trocar tema
   const _all = products || [];
   window.__lastProducts = _all;
 
+  // Aplica o filtro de tema na renderização
   const filtered = _all.filter(p =>
     currentTheme === 'creative'
       ? p.category === 'creative'
@@ -748,17 +645,17 @@ function renderGrid(products) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   FIRESTORE — carregado dinamicamente, com fallback DEMO
+   FIRESTORE  — carregado dinamicamente, com fallback DEMO
    ══════════════════════════════════════════════════════════ */
 const DEMO = [
-  { id:'1', name:'Quadro Minimalista', price:189, badge:'NOVO', emoji:'🖼️', description:'Arte exclusiva para sua sala',     category:'decor',    model3dUrl: null },
-  { id:'2', name:'Vaso Orgânico',      price:97,  badge:'TOP',  emoji:'🏺', description:'Cerâmica artesanal brasileira',    category:'decor',    model3dUrl: null },
-  { id:'3', name:'Luminária Arc',      price:345,               emoji:'💡', description:'Design escandinavo contemporâneo', category:'decor',    model3dUrl: null },
-  { id:'4', name:'Tapete Bouclé',      price:278,               emoji:'🪨', description:'Textura tátil única, 160×230cm',   category:'decor',    model3dUrl: null },
-  { id:'5', name:'Modelo 3D #01',      price:220, badge:'3D',   emoji:'💎', description:'Asset digital high-poly',          category:'creative', model3dUrl: null },
-  { id:'6', name:'Render Pack',        price:499, badge:'PRO',  emoji:'🎮', description:'10 cenas prontas para usar',       category:'creative', model3dUrl: null },
-  { id:'7', name:'Scene Kit Vol.1',    price:180, badge:'NEW',  emoji:'🌐', description:'5 ambientes prontos para render',  category:'creative', model3dUrl: null },
-  { id:'8', name:'Shader Pack',        price:89,                emoji:'✨', description:'20 materiais PBR otimizados',      category:'creative', model3dUrl: null },
+  { id:'1', name:'Quadro Minimalista', price:189, badge:'NOVO', emoji:'🖼️', description:'Arte exclusiva para sua sala',     category:'decor'    },
+  { id:'2', name:'Vaso Orgânico',      price:97,  badge:'TOP',  emoji:'🏺', description:'Cerâmica artesanal brasileira',    category:'decor'    },
+  { id:'3', name:'Luminária Arc',      price:345,               emoji:'💡', description:'Design escandinavo contemporâneo', category:'decor'    },
+  { id:'4', name:'Tapete Bouclé',      price:278,               emoji:'🪨', description:'Textura tátil única, 160×230cm',   category:'decor'    },
+  { id:'5', name:'Modelo 3D #01',      price:220, badge:'3D',   emoji:'💎', description:'Asset digital high-poly',          category:'creative' },
+  { id:'6', name:'Render Pack',        price:499, badge:'PRO',  emoji:'🎮', description:'10 cenas prontas para usar',       category:'creative' },
+  { id:'7', name:'Scene Kit Vol.1',    price:180, badge:'NEW',  emoji:'🌐', description:'5 ambientes prontos para render',  category:'creative' },
+  { id:'8', name:'Shader Pack',        price:89,                emoji:'✨', description:'20 materiais PBR otimizados',      category:'creative' },
 ];
 
 let db = null;
@@ -809,6 +706,9 @@ async function subscribeFirestore() {
 
     const ref = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
 
+    // FIX v6.1: snapshot entrega TODOS os produtos sem filtrar por tema.
+    // O filtro acontece dentro de renderGrid(), que usa currentTheme no momento
+    // da chamada — assim trocar de tema re-filtra corretamente sem novo fetch.
     unsub = onSnapshot(ref, snap => {
       clearTimeout(fallbackTimer);
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -826,7 +726,7 @@ async function subscribeFirestore() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   INIT — event listeners
+   INIT — event listeners (carrinho, checkout, pagamento etc.)
    ══════════════════════════════════════════════════════════ */
 document.getElementById('cart-fab')?.addEventListener('click', openCart);
 document.getElementById('cart-overlay')?.addEventListener('click', closeCart);
