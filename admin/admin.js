@@ -99,7 +99,7 @@ async function boot() {
       import('firebase/app'),
       import('firebase/firestore'),
       import('firebase/auth'),
-      import('../firebase-config.js'),   // ← CORRIGIDO: estava '../firebase-config.js'
+      import('../js/firebase-config.js'),   // ← CORRIGIDO: estava '../firebase-config.js'
     ]);
   } catch (err) {
     console.error('[boot] Falha ao importar módulos:', err);
