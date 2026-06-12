@@ -1,10 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — admin.js  (ES module)
-   FIX v3:
+   FIX v4:
+   · firebase-config.js agora está em /js/ — path atualizado
    · boot() carrega firebase SEQUENCIALMENTE antes de bindar o botão
    · signInWithPopup chamado direto no click handler (sem await prévio)
-     — isso evita o bloqueio de popup por "gesto do usuário perdido"
-   · modal usa classList.add/remove('open') em vez de style.display
+   · modal usa classList.add/remove('open')
    · view-login usa classList.add/remove('hidden') + display:none no CSS
    ═══════════════════════════════════════════════════════════ */
 
@@ -87,7 +87,11 @@ function showPanel() {
 /* ── BOOT ──────────────────────────────────────────────────── */
 async function boot() {
 
-  /* 1. Importa tudo antes de qualquer interação */
+  /* 1. Importa tudo antes de qualquer interação
+     ATENÇÃO: firebase-config.js agora está em /js/ (mesmo diretório
+     que admin.js quando servido via /admin/), então o path relativo
+     correto é '../js/firebase-config.js'
+  */
   let firebaseApp, firestoreMod, authMod, config;
 
   try {
@@ -95,7 +99,7 @@ async function boot() {
       import('firebase/app'),
       import('firebase/firestore'),
       import('firebase/auth'),
-      import('../firebase-config.js'),   // raiz do projeto
+      import('../js/firebase-config.js'),   // ← CORRIGIDO: estava '../firebase-config.js'
     ]);
   } catch (err) {
     console.error('[boot] Falha ao importar módulos:', err);
