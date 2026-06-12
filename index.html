@@ -4,118 +4,54 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>GLM Universe</title>
-
-<!--
-  ═══════════════════════════════════════════════════════════
-  CACHE BUSTING
-  __BUILD_ID__ é substituído automaticamente pelo GitHub Actions
-  a cada push para main (deploy.yml). Não precisa editar manualmente.
-  ═══════════════════════════════════════════════════════════
--->
-<script>
-(function() {
-  var BUILD_ID = '__BUILD_ID__';
-  var stored = sessionStorage.getItem('glm_build');
-  if (stored && stored !== BUILD_ID) {
-    sessionStorage.setItem('glm_build', BUILD_ID);
-    if ('caches' in window) {
-      caches.keys().then(function(keys) {
-        keys.forEach(function(k) { caches.delete(k); });
-      });
-    }
-    window.location.reload(true);
-  } else {
-    sessionStorage.setItem('glm_build', BUILD_ID);
-  }
-  window.GLM_BUILD = BUILD_ID;
-})();
-</script>
-
-<link rel="stylesheet" href="style.css?v=__BUILD_ID__"/>
-
+<link rel="stylesheet" href="style.css"/>
 <script type="importmap">
 {
   "imports": {
     "three":              "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js",
-    "three/addons/":      "https://unpkg.com/three@0.128.0/examples/jsm/",
     "firebase/app":       "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js",
     "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"
   }
 }
 </script>
-<script type="module" src="js/main.js?v=__BUILD_ID__"></script>
-
-<!-- Service Worker -->
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/sw.js').then(function(reg) {
-      reg.update();
-      if (reg.waiting) {
-        reg.waiting.postMessage('SKIP_WAITING');
-      }
-      reg.addEventListener('updatefound', function() {
-        var newWorker = reg.installing;
-        newWorker.addEventListener('statechange', function() {
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            newWorker.postMessage('SKIP_WAITING');
-          }
-        });
-      });
-    }).catch(function(err) {
-      console.warn('SW registration failed:', err);
-    });
-
-    var refreshing = false;
-    navigator.serviceWorker.addEventListener('controllerchange', function() {
-      if (!refreshing) {
-        refreshing = true;
-        window.location.reload();
-      }
-    });
-  });
-}
-</script>
+<script type="module" src="js/main.js"></script>
 </head>
 <body>
 <div id="root" class="glm-root">
 
   <!-- ═══ CART FAB ═══ -->
-  <button class="cart-fab" id="cart-fab" aria-label="Carrinho">
+  <button class="cart-fab" id="cart-fab">
     🛒
     <span class="cart-fab-count" id="cart-fab-count">0</span>
   </button>
 
   <!-- ═══ HERO ═══ -->
   <section class="hero" id="hero">
-
-    <!-- Camada 0: Vídeo de fundo -->
+    <!-- Vídeo de fundo (coloque seu arquivo em /assets/hero-bg.mp4) -->
     <video
       class="hero-video"
       id="hero-video"
-      autoplay muted loop playsinline
+      autoplay
+      muted
+      loop
+      playsinline
       poster="assets/hero-poster.jpg"
     >
-      <source src="assets/video2-hero.mp4" type="video/mp4"/>
+      <source src="assets/hero-bg.mp4" type="video/mp4"/>
     </video>
 
-    <!-- Camada 1: Canvas de partículas (pointer-events:none no CSS) -->
     <canvas id="hero-canvas"></canvas>
-
-    <!-- Camada 2: Vignette escura para o texto se destacar -->
     <div class="vignette"></div>
 
-    <!-- Camada 3: Texto suspenso sobre o vídeo -->
     <div class="hero-text">
       <p class="glm-eyebrow eye-decor" id="eyebrow">ESCOLHA SUA EXPERIÊNCIA</p>
       <h1 class="glm-title title-decor" id="main-title">GLM UNIVERSE</h1>
       <div class="sel-row">
-        <button type="button" class="sel-btn sel-active-decor" id="btn-d" data-theme="decor">🌿 ESSÊNCIA DECOR</button>
-        <button type="button" class="sel-btn" id="btn-c" data-theme="creative">✦ CREATIVE 3D</button>
+        <button class="sel-btn sel-active-decor" id="btn-d">🌿 ESSÊNCIA DECOR</button>
+        <button class="sel-btn" id="btn-c">✦ CREATIVE 3D</button>
       </div>
     </div>
 
-    <!-- Badge AO VIVO -->
     <div class="live-badge">
       <div class="live-dot dot-decor" id="live-dot"></div>
       <span id="live-text">AO VIVO</span>
@@ -130,7 +66,7 @@ if ('serviceWorker' in navigator) {
       <div class="dline dline-decor" id="dl2"></div>
     </div>
 
-    <div id="loading-state" class="loading-state">
+    <div id="loading-state" class="loading-state" style="display:none">
       <div class="spinner"></div>
       <p>Carregando catálogo…</p>
     </div>
@@ -149,8 +85,8 @@ if ('serviceWorker' in navigator) {
   </footer>
 </div>
 
-<!-- ═══ PREVIEW 3D (tooltip) ═══ -->
-<div id="preview-3d" style="display:none;position:fixed;z-index:400;pointer-events:none;">
+<!-- ═══ 3D PREVIEW ═══ -->
+<div id="preview-3d" style="display:none;position:fixed;pointer-events:none;z-index:999;">
   <canvas id="preview-canvas" width="160" height="160"></canvas>
 </div>
 
@@ -176,6 +112,7 @@ if ('serviceWorker' in navigator) {
 </div>
 
 <!-- ═══ VARIANT MODAL ═══ -->
+<!-- CORREÇÃO: display:none era ausente, causando overlay bloqueando cliques -->
 <div class="variant-overlay" id="variant-overlay" style="display:none">
   <div class="variant-modal">
     <h3 id="vm-name"></h3>
@@ -184,96 +121,6 @@ if ('serviceWorker' in navigator) {
     <div class="vm-actions">
       <button class="vm-cancel" id="vm-cancel">Cancelar</button>
       <button class="vm-add" id="vm-add">ADICIONAR AO CARRINHO</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══ CHECKOUT PAGE (overlay full-screen, sem redirect) ═══ -->
-<div class="checkout-overlay" id="checkout-overlay">
-  <div class="checkout-page">
-    <div class="checkout-header">
-      <button class="checkout-back" id="checkout-back">← Voltar</button>
-      <span class="checkout-title">FINALIZAR PEDIDO</span>
-    </div>
-
-    <div class="checkout-body">
-      <!-- Resumo -->
-      <div class="checkout-section">
-        <h2 class="checkout-section-title">Resumo do Pedido</h2>
-        <div id="checkout-items-summary"></div>
-        <div class="checkout-subtotal-row">
-          <span>Total</span>
-          <span id="checkout-total-display" class="checkout-total-val">R$ 0,00</span>
-        </div>
-      </div>
-
-      <!-- Dados do cliente -->
-      <div class="checkout-section">
-        <h2 class="checkout-section-title">Seus Dados</h2>
-        <div class="checkout-field">
-          <label>NOME COMPLETO</label>
-          <input type="text" id="co-name" placeholder="Como quer ser chamado(a)" autocomplete="name"/>
-        </div>
-        <div class="checkout-field">
-          <label>WHATSAPP</label>
-          <input type="tel" id="co-phone" placeholder="(61) 9 0000-0000" autocomplete="tel"/>
-        </div>
-        <div class="checkout-field">
-          <label>E-MAIL (opcional)</label>
-          <input type="email" id="co-email" placeholder="seu@email.com" autocomplete="email"/>
-        </div>
-      </div>
-
-      <!-- Entrega -->
-      <div class="checkout-section">
-        <h2 class="checkout-section-title">Entrega</h2>
-        <div class="delivery-options">
-          <label class="delivery-opt">
-            <input type="radio" name="delivery" value="retirada" checked/>
-            <span class="delivery-opt-box">
-              <span class="delivery-opt-icon">🏪</span>
-              <span class="delivery-opt-label">Retirada</span>
-              <span class="delivery-opt-sub">Grátis · Combinar local</span>
-            </span>
-          </label>
-          <label class="delivery-opt">
-            <input type="radio" name="delivery" value="entrega"/>
-            <span class="delivery-opt-box">
-              <span class="delivery-opt-icon">🚚</span>
-              <span class="delivery-opt-label">Entrega</span>
-              <span class="delivery-opt-sub">A combinar</span>
-            </span>
-          </label>
-        </div>
-        <div class="checkout-field" id="address-field" style="display:none; margin-top:12px">
-          <label>ENDEREÇO DE ENTREGA</label>
-          <input type="text" id="co-address" placeholder="Rua, número, bairro, cidade" autocomplete="street-address"/>
-        </div>
-      </div>
-
-      <!-- Pagamento -->
-      <div class="checkout-section">
-        <h2 class="checkout-section-title">Pagamento</h2>
-        <div class="payment-options">
-          <button type="button" class="pay-opt pay-opt-active" data-pay="pix">💠 PIX</button>
-          <button type="button" class="pay-opt" data-pay="cartao">💳 Cartão</button>
-          <button type="button" class="pay-opt" data-pay="dinheiro">💵 Dinheiro</button>
-        </div>
-      </div>
-
-      <!-- Observações -->
-      <div class="checkout-section">
-        <h2 class="checkout-section-title">Observações</h2>
-        <div class="checkout-field">
-          <textarea id="co-notes" rows="3" placeholder="Alguma observação especial para o pedido?"></textarea>
-        </div>
-      </div>
-
-      <div class="checkout-error" id="checkout-error"></div>
-
-      <button type="button" class="btn-send-order" id="btn-send-order">
-        <span>📲 ENVIAR PEDIDO VIA WHATSAPP</span>
-      </button>
     </div>
   </div>
 </div>
