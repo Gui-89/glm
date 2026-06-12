@@ -673,7 +673,7 @@ async function initFirebase() {
     const [{ initializeApp }, { getFirestore }, { FIREBASE_CONFIG }] = await Promise.all([
       import('firebase/app'),
       import('firebase/firestore'),
-      import('./js/firebase-config.js'),   // ← CORRIGIDO: estava './firebase-config.js'
+      import('./firebase-config.js'),   // ← CORRIGIDO: estava './firebase-config.js'
     ]);
     const app = initializeApp(FIREBASE_CONFIG);
     db = getFirestore(app);
