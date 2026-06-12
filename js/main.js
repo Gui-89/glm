@@ -1,8 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — main.js  (ES module)
-   v6 — fix: tema sempre clicável (resiliente a falhas externas),
-        vídeo hero, checkout overlay, cache automático
-   v6.1 — fix: produtos do tema correto sempre visíveis ao trocar tema
+   v6.2 — fix:
+   · firebase-config.js agora está em /js/ — path corrigido
+   · botão "−" do carrinho: ao chegar em qty=1 remove o item
+     em vez de travar (usuário consegue esvaziar o carrinho)
+   · localStorage limpo corretamente ao remover items
    ═══════════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════════
@@ -84,7 +86,7 @@ function applyTheme(t) {
     if (source && !currentSrc.endsWith(newSrc.split('/').pop())) {
       source.setAttribute('src', newSrc);
       video.load();
-      video.play().catch(() => {}); // autoplay pode ser bloqueado, ignora erro
+      video.play().catch(() => {});
     }
 
     video.style.filter = t === 'creative'
@@ -102,12 +104,10 @@ function applyTheme(t) {
   document.documentElement.style.setProperty('--accent-b',
     t === 'creative' ? 'var(--purple-b)' : 'var(--green-b)');
 
-  // Re-renderiza com todos os produtos guardados, aplicando o novo filtro de tema
   if (window.__lastProducts !== undefined) renderGrid(window.__lastProducts);
   subscribeFirestore();
 }
 
-// Registra os listeners de tema IMEDIATAMENTE — independente de Firebase/Three
 document.getElementById('btn-d')?.addEventListener('click', () => {
   if (currentTheme === 'decor') return;
   applyTheme('decor');
@@ -167,10 +167,21 @@ function removeFromCart(key) {
   updateCartFab();
 }
 
+/* FIX v6.2: ao decrementar até 1 e clicar "−" novamente, remove o item
+   em vez de travar em qty=1. Isso libera o usuário de ficar preso. */
 function changeQty(key, delta) {
   const idx = cart.findIndex(i => i.key === key);
   if (idx < 0) return;
-  cart[idx].qty = Math.max(1, cart[idx].qty + delta);
+
+  const newQty = cart[idx].qty + delta;
+
+  if (newQty <= 0) {
+    // Remove o item quando qty chegaria a zero
+    removeFromCart(key);
+    return;
+  }
+
+  cart[idx].qty = newQty;
   saveCart();
   renderCart();
   updateCartFab();
@@ -231,7 +242,7 @@ function renderCart() {
           <button class="cart-qty-btn" data-key="${item.key}" data-d="1">+</button>
         </div>
       </div>
-      <button class="cart-item-remove" data-key="${item.key}">✕</button>`;
+      <button class="cart-item-remove" data-key="${item.key}" title="Remover">✕</button>`;
     el.querySelector('.cart-item-remove').addEventListener('click', () => removeFromCart(item.key));
     el.querySelectorAll('.cart-qty-btn').forEach(b =>
       b.addEventListener('click', () => changeQty(item.key, parseInt(b.dataset.d)))
@@ -317,7 +328,6 @@ function sendOrder() {
     notes ? `*Obs:* ${notes}` : null,
   ].filter(l => l !== null).join('\n');
 
-  // Número do WhatsApp do lojista — ajuste aqui
   const waNumber = '5561999999999';
   const url = `https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`;
   window.open(url, '_blank');
@@ -472,7 +482,7 @@ function initCanvasHero() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   THREE.JS PREVIEW — carregado dinamicamente, não bloqueia o resto
+   THREE.JS PREVIEW — carregado dinamicamente
    ══════════════════════════════════════════════════════════ */
 const PREV_COLORS = { decor: 0x5eca8a, creative: 0xc9a6ff };
 
@@ -564,7 +574,6 @@ async function initThreePreview() {
     }
   };
 
-  // Aplica o tema atual assim que o preview estiver pronto
   window._preview.setTheme(currentTheme);
 }
 
@@ -611,16 +620,11 @@ function makeCard(prod, idx) {
 
 /* ══════════════════════════════════════════════════════════
    RENDER GRID
-   FIX v6.1: o filtro de tema é aplicado AQUI, não no snapshot.
-   __lastProducts guarda TODOS os produtos sem filtro,
-   permitindo re-filtrar corretamente ao trocar de tema.
    ══════════════════════════════════════════════════════════ */
 function renderGrid(products) {
-  // Guarda todos os produtos (sem filtro) para re-uso ao trocar tema
   const _all = products || [];
   window.__lastProducts = _all;
 
-  // Aplica o filtro de tema na renderização
   const filtered = _all.filter(p =>
     currentTheme === 'creative'
       ? p.category === 'creative'
@@ -645,7 +649,8 @@ function renderGrid(products) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   FIRESTORE  — carregado dinamicamente, com fallback DEMO
+   FIRESTORE — carregado dinamicamente, com fallback DEMO
+   FIX v6.2: firebase-config.js agora está em /js/
    ══════════════════════════════════════════════════════════ */
 const DEMO = [
   { id:'1', name:'Quadro Minimalista', price:189, badge:'NOVO', emoji:'🖼️', description:'Arte exclusiva para sua sala',     category:'decor'    },
@@ -668,7 +673,7 @@ async function initFirebase() {
     const [{ initializeApp }, { getFirestore }, { FIREBASE_CONFIG }] = await Promise.all([
       import('firebase/app'),
       import('firebase/firestore'),
-      import('./firebase-config.js'),
+      import('./js/firebase-config.js'),   // ← CORRIGIDO: estava './firebase-config.js'
     ]);
     const app = initializeApp(FIREBASE_CONFIG);
     db = getFirestore(app);
@@ -706,9 +711,6 @@ async function subscribeFirestore() {
 
     const ref = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
 
-    // FIX v6.1: snapshot entrega TODOS os produtos sem filtrar por tema.
-    // O filtro acontece dentro de renderGrid(), que usa currentTheme no momento
-    // da chamada — assim trocar de tema re-filtra corretamente sem novo fetch.
     unsub = onSnapshot(ref, snap => {
       clearTimeout(fallbackTimer);
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -726,7 +728,7 @@ async function subscribeFirestore() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   INIT — event listeners (carrinho, checkout, pagamento etc.)
+   INIT — event listeners
    ══════════════════════════════════════════════════════════ */
 document.getElementById('cart-fab')?.addEventListener('click', openCart);
 document.getElementById('cart-overlay')?.addEventListener('click', closeCart);
