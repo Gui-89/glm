@@ -27,7 +27,6 @@
 
   <!-- ═══ HERO ═══ -->
   <section class="hero" id="hero">
-    <!-- Vídeo de fundo (coloque seu arquivo em /assets/hero-bg.mp4) -->
     <video
       class="hero-video"
       id="hero-video"
@@ -37,7 +36,7 @@
       playsinline
       poster="assets/hero-poster.jpg"
     >
-      <source src="assets/hero-bg.mp4" type="video/mp4"/>
+      <source src="assets/video2-hero.mp4" type="video/mp4"/>
     </video>
 
     <canvas id="hero-canvas"></canvas>
@@ -85,7 +84,7 @@
   </footer>
 </div>
 
-<!-- ═══ 3D PREVIEW ═══ -->
+<!-- ═══ 3D PREVIEW (hover) ═══ -->
 <div id="preview-3d" style="display:none;position:fixed;pointer-events:none;z-index:999;">
   <canvas id="preview-canvas" width="160" height="160"></canvas>
 </div>
@@ -112,7 +111,6 @@
 </div>
 
 <!-- ═══ VARIANT MODAL ═══ -->
-<!-- CORREÇÃO: display:none era ausente, causando overlay bloqueando cliques -->
 <div class="variant-overlay" id="variant-overlay" style="display:none">
   <div class="variant-modal">
     <h3 id="vm-name"></h3>
@@ -121,6 +119,154 @@
     <div class="vm-actions">
       <button class="vm-cancel" id="vm-cancel">Cancelar</button>
       <button class="vm-add" id="vm-add">ADICIONAR AO CARRINHO</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PRODUCT DETAIL MODAL ═══ -->
+<div class="pd-overlay" id="pd-overlay" style="display:none">
+  <div class="pd-modal">
+    <div class="pd-handle"></div>
+
+    <div class="pd-header">
+      <span class="pd-header-title">DETALHE DO PRODUTO</span>
+      <button class="pd-close" id="pd-close">✕</button>
+    </div>
+
+    <!-- Galeria de fotos -->
+    <div class="pd-gallery">
+      <!-- Visualizador 3D (oculto por padrão) -->
+      <div class="pd-3d-viewer" id="pd-3d-viewer">
+        <canvas id="pd-3d-canvas"></canvas>
+        <div class="pd-3d-hint">PREVIEW 3D</div>
+      </div>
+
+      <!-- Área principal da imagem -->
+      <div class="pd-gallery-main" id="pd-gallery-main">
+        <img id="pd-main-img" src="" alt="" style="display:none"/>
+        <div class="pd-emoji-big" id="pd-main-emoji" style="display:none"></div>
+        <!-- Badge 3D -->
+        <button class="pd-3d-badge" id="pd-3d-badge" type="button">⬡ VER 3D</button>
+        <!-- Navegação -->
+        <button class="pd-gallery-nav prev" id="pd-nav-prev" type="button" disabled>‹</button>
+        <button class="pd-gallery-nav next" id="pd-nav-next" type="button" disabled>›</button>
+      </div>
+
+      <!-- Miniaturas -->
+      <div class="pd-thumbs" id="pd-thumbs"></div>
+    </div>
+
+    <!-- Corpo -->
+    <div class="pd-body">
+      <div class="pd-title-row">
+        <div class="pd-name" id="pd-name"></div>
+        <span class="pd-badge-tag" id="pd-badge-tag" style="display:none"></span>
+      </div>
+
+      <div class="pd-price" id="pd-price"></div>
+
+      <div class="pd-category-label" id="pd-category-label"
+           style="font-size:9px;letter-spacing:2px;opacity:.4;margin-top:-8px"></div>
+
+      <div class="pd-description" id="pd-description"></div>
+
+      <div class="pd-divider"></div>
+
+      <!-- Variantes -->
+      <div class="pd-variants" id="pd-variants-container"></div>
+    </div>
+
+    <!-- Footer fixo -->
+    <div class="pd-footer">
+      <button class="pd-add-btn" id="pd-add-btn" type="button">
+        + ADICIONAR AO CARRINHO
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CHECKOUT OVERLAY ═══ -->
+<div class="checkout-overlay" id="checkout-overlay">
+  <div class="checkout-page">
+    <div class="checkout-header">
+      <button class="checkout-back" id="checkout-back" type="button">← Voltar</button>
+      <span class="checkout-title">FINALIZAR COMPRA</span>
+    </div>
+
+    <div class="checkout-body">
+      <!-- Resumo -->
+      <div class="checkout-section">
+        <div class="checkout-section-title">RESUMO DO PEDIDO</div>
+        <div id="checkout-items-summary"></div>
+        <div class="checkout-subtotal-row">
+          <span>Total</span>
+          <span class="checkout-total-val" id="checkout-total-display">R$ 0,00</span>
+        </div>
+      </div>
+
+      <!-- Dados -->
+      <div class="checkout-section">
+        <div class="checkout-section-title">SEUS DADOS</div>
+        <div class="checkout-field">
+          <label>NOME *</label>
+          <input type="text" id="co-name" placeholder="Seu nome completo"/>
+        </div>
+        <div class="checkout-field">
+          <label>WHATSAPP *</label>
+          <input type="tel" id="co-phone" placeholder="(61) 9 0000-0000"/>
+        </div>
+      </div>
+
+      <!-- Entrega -->
+      <div class="checkout-section">
+        <div class="checkout-section-title">ENTREGA</div>
+        <div class="delivery-options">
+          <label class="delivery-opt">
+            <input type="radio" name="delivery" value="retirada" checked/>
+            <div class="delivery-opt-box">
+              <span class="delivery-opt-icon">🏪</span>
+              <span class="delivery-opt-label">Retirada</span>
+              <span class="delivery-opt-sub">Combinar local</span>
+            </div>
+          </label>
+          <label class="delivery-opt">
+            <input type="radio" name="delivery" value="entrega"/>
+            <div class="delivery-opt-box">
+              <span class="delivery-opt-icon">🚚</span>
+              <span class="delivery-opt-label">Entrega</span>
+              <span class="delivery-opt-sub">Informar endereço</span>
+            </div>
+          </label>
+        </div>
+        <div class="checkout-field" id="address-field" style="display:none">
+          <label>ENDEREÇO DE ENTREGA *</label>
+          <input type="text" id="co-address" placeholder="Rua, número, bairro, cidade"/>
+        </div>
+      </div>
+
+      <!-- Pagamento -->
+      <div class="checkout-section">
+        <div class="checkout-section-title">PAGAMENTO</div>
+        <div class="payment-options">
+          <button class="pay-opt pay-opt-active" data-pay="pix" type="button">💠 PIX</button>
+          <button class="pay-opt" data-pay="cartao" type="button">💳 Cartão</button>
+          <button class="pay-opt" data-pay="dinheiro" type="button">💵 Dinheiro</button>
+        </div>
+      </div>
+
+      <!-- Obs -->
+      <div class="checkout-section">
+        <div class="checkout-section-title">OBSERVAÇÕES</div>
+        <div class="checkout-field">
+          <label>OBSERVAÇÕES (opcional)</label>
+          <textarea id="co-notes" placeholder="Alguma observação sobre o pedido?"></textarea>
+        </div>
+      </div>
+
+      <div class="checkout-error" id="checkout-error"></div>
+      <button class="btn-send-order" id="btn-send-order" type="button">
+        📲 ENVIAR PEDIDO VIA WHATSAPP
+      </button>
     </div>
   </div>
 </div>
