@@ -1,5 +1,9 @@
 /* ═══════════════════════════════════════════
-   GLM UNIVERSE — style.css  v4
+   GLM UNIVERSE — style.css  v5
+   Mudanças vs v4:
+   · card-img: altura maior + object-fit contain para não cortar foto
+   · estilos do modal de detalhe do produto (product-detail-overlay)
+   · estilos do viewer 3D embutido no modal
    ═══════════════════════════════════════════ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -35,14 +39,13 @@ html, body {
    ═══════════════════════════════════════════ */
 .hero {
   position: relative;
-  height: 420px;          /* um pouco mais alto para o vídeo respirar */
+  height: 420px;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* ── Camada 0: Vídeo ── */
 .hero-video {
   position: absolute;
   inset: 0;
@@ -50,22 +53,19 @@ html, body {
   height: 100%;
   object-fit: cover;
   z-index: 0;
-  /* Deixa o vídeo visível mas escurecido para o texto se destacar */
   filter: brightness(0.45) saturate(0.7);
   transition: filter 1s ease;
 }
 
-/* ── Camada 1: Canvas (partículas) ── */
 #hero-canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   z-index: 1;
-  pointer-events: none; /* CRÍTICO: não bloqueia cliques */
+  pointer-events: none;
 }
 
-/* ── Camada 2: Vignette ── */
 .vignette {
   position: absolute;
   inset: 0;
@@ -84,7 +84,6 @@ html, body {
       rgba(5,5,5,.65) 100%);
 }
 
-/* ── Camada 3: Texto (suspenso sobre o vídeo) ── */
 .hero-text {
   position: relative;
   z-index: 3;
@@ -93,7 +92,6 @@ html, body {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  /* Sombra extra para legibilidade sobre o vídeo */
   filter: drop-shadow(0 4px 32px rgba(0,0,0,.7));
 }
 
@@ -137,7 +135,6 @@ html, body {
   94%  { letter-spacing: 14px }
 }
 
-/* ── Selector buttons ── */
 .sel-row {
   display: flex;
   gap: 10px;
@@ -177,7 +174,6 @@ html, body {
   box-shadow: 0 0 28px rgba(130,80,255,.3);
 }
 
-/* ── Live badge ── */
 .live-badge {
   position: absolute;
   bottom: 14px; right: 16px;
@@ -220,8 +216,8 @@ html, body {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  gap: 14px;
 }
 
 /* ── Product Card ── */
@@ -239,8 +235,9 @@ html, body {
 .card-creative { background: #0c0918; border: .5px solid rgba(130,80,255,.2); }
 .card-creative:hover { border-color: rgba(160,110,232,.65); box-shadow: 0 10px 30px rgba(130,80,255,.2); }
 
+/* FIX v5: altura maior + contain para não cortar a foto */
 .card-img {
-  height: 100px;
+  height: 160px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -249,15 +246,17 @@ html, body {
   overflow: hidden;
 }
 .card-img img {
-  width: 100%; height: 100%;
-  object-fit: cover;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;   /* ← era cover; contain garante foto inteira sem corte */
+  padding: 6px;          /* respiro visual nas bordas */
   position: absolute;
   inset: 0;
 }
 .card-img .emoji-fallback {
   position: relative;
   z-index: 1;
-  font-size: 36px;
+  font-size: 40px;
 }
 .ci-decor    { background: linear-gradient(135deg,#060e08,#0f1c11); }
 .ci-creative { background: linear-gradient(135deg,#080512,#12092a); }
@@ -504,7 +503,7 @@ html, body {
   overflow: hidden;
   flex-shrink: 0;
 }
-.cart-item-img img { width: 100%; height: 100%; object-fit: cover; }
+.cart-item-img img { width: 100%; height: 100%; object-fit: contain; padding: 2px; }
 .cart-item-info { flex: 1; min-width: 0; }
 .cart-item-name { font-size: 11px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cart-item-variant { font-size: 9px; opacity: .4; margin-bottom: 3px; }
@@ -734,7 +733,6 @@ html, body {
   flex-shrink: 0;
 }
 
-/* Resumo dos itens no checkout */
 #checkout-items-summary {
   display: flex;
   flex-direction: column;
@@ -769,10 +767,7 @@ html, body {
   opacity: 1;
 }
 
-/* Campos */
-.checkout-field {
-  margin-bottom: 14px;
-}
+.checkout-field { margin-bottom: 14px; }
 .checkout-field label {
   display: block;
   font-size: 8px;
@@ -801,7 +796,6 @@ html, body {
 }
 .checkout-field textarea { resize: vertical; min-height: 72px; }
 
-/* Opções de entrega */
 .delivery-options {
   display: flex;
   gap: 10px;
@@ -830,7 +824,6 @@ html, body {
 .delivery-opt-label { font-size: 11px; font-weight: 600; }
 .delivery-opt-sub { font-size: 9px; opacity: .4; }
 
-/* Pagamento */
 .payment-options {
   display: flex;
   gap: 8px;
@@ -856,7 +849,6 @@ html, body {
   background: rgba(74,160,100,.12);
 }
 
-/* Erro e botão final */
 .checkout-error {
   font-size: 10px;
   color: #ff6060;
@@ -889,6 +881,309 @@ html, body {
   transform: translateY(-1px);
 }
 .btn-send-order:active { transform: scale(.98); }
+
+/* ═══════════════════════════════════════════
+   PRODUCT DETAIL MODAL  (NOVO — v5)
+   ═══════════════════════════════════════════ */
+.pd-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.82);
+  z-index: 850;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 0;
+}
+.pd-overlay.open {
+  display: flex;
+}
+
+.pd-modal {
+  background: #0a0a0a;
+  border: .5px solid rgba(255,255,255,.1);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 680px;
+  max-height: 92dvh;
+  overflow-y: auto;
+  transform: translateY(100%);
+  transition: transform .4s cubic-bezier(.25,.46,.45,.94);
+  display: flex;
+  flex-direction: column;
+}
+.pd-overlay.open .pd-modal {
+  transform: translateY(0);
+}
+
+/* handle de arrasto (visual) */
+.pd-handle {
+  width: 38px; height: 4px;
+  background: rgba(255,255,255,.15);
+  border-radius: 2px;
+  margin: 12px auto 0;
+  flex-shrink: 0;
+}
+
+.pd-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px 10px;
+  border-bottom: .5px solid rgba(255,255,255,.06);
+  flex-shrink: 0;
+}
+.pd-header-title {
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: rgba(255,255,255,.3);
+  text-transform: uppercase;
+}
+.pd-close {
+  background: rgba(255,255,255,.06);
+  border: none;
+  color: rgba(255,255,255,.5);
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .2s;
+}
+.pd-close:hover { background: rgba(255,255,255,.14); color: #fff; }
+
+/* ── Galeria ── */
+.pd-gallery {
+  position: relative;
+  background: #070707;
+  flex-shrink: 0;
+}
+
+.pd-gallery-main {
+  width: 100%;
+  height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+.pd-gallery-main img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  padding: 12px;
+  transition: opacity .3s;
+}
+.pd-gallery-main .pd-emoji-big {
+  font-size: 72px;
+}
+
+/* botões nav galeria */
+.pd-gallery-nav {
+  position: absolute;
+  top: 50%; transform: translateY(-50%);
+  background: rgba(0,0,0,.6);
+  border: .5px solid rgba(255,255,255,.12);
+  color: rgba(255,255,255,.7);
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .2s;
+  z-index: 2;
+}
+.pd-gallery-nav:hover { background: rgba(0,0,0,.85); color: #fff; }
+.pd-gallery-nav.prev { left: 10px; }
+.pd-gallery-nav.next { right: 10px; }
+.pd-gallery-nav:disabled { opacity: .2; cursor: default; }
+
+/* miniaturas */
+.pd-thumbs {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pd-thumbs::-webkit-scrollbar { display: none; }
+
+.pd-thumb {
+  width: 52px; height: 52px;
+  border-radius: 7px;
+  background: #111;
+  border: 1.5px solid rgba(255,255,255,.08);
+  cursor: pointer;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+  transition: border-color .2s;
+}
+.pd-thumb img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  padding: 3px;
+}
+.pd-thumb.active { border-color: var(--accent); }
+
+/* badge 3D no canto da galeria */
+.pd-3d-badge {
+  position: absolute;
+  top: 10px; left: 10px;
+  background: rgba(0,0,0,.7);
+  border: .5px solid rgba(255,255,255,.15);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--accent);
+  cursor: pointer;
+  transition: all .2s;
+  z-index: 3;
+  display: none;
+}
+.pd-3d-badge:hover { background: rgba(0,0,0,.9); border-color: var(--accent); }
+.pd-3d-badge.visible { display: block; }
+
+/* canvas 3D dentro do modal */
+.pd-3d-viewer {
+  display: none;
+  width: 100%;
+  height: 280px;
+  position: relative;
+}
+.pd-3d-viewer.active { display: block; }
+.pd-3d-viewer canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+.pd-3d-hint {
+  position: absolute;
+  bottom: 8px; right: 10px;
+  font-size: 8.5px;
+  opacity: .3;
+  letter-spacing: .5px;
+  pointer-events: none;
+}
+
+/* ── Conteúdo do modal ── */
+.pd-body {
+  padding: 20px 20px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pd-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pd-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(255,255,255,.92);
+  line-height: 1.25;
+}
+.pd-badge-tag {
+  font-size: 8px;
+  letter-spacing: 1px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.pd-badge-decor    { background: rgba(74,160,100,.2);  color: var(--green);  }
+.pd-badge-creative { background: rgba(160,110,232,.2); color: var(--purple); }
+
+.pd-price {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.pd-description {
+  font-size: 13px;
+  line-height: 1.65;
+  color: rgba(255,255,255,.6);
+}
+
+.pd-divider {
+  height: .5px;
+  background: rgba(255,255,255,.07);
+}
+
+/* variants dentro do detail */
+.pd-variants { display: flex; flex-direction: column; gap: 14px; }
+.pd-variant-group-label {
+  font-size: 8.5px;
+  letter-spacing: 2px;
+  color: rgba(255,255,255,.3);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+.pd-variant-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pd-variant-pill {
+  padding: 6px 16px;
+  border-radius: 18px;
+  border: .5px solid rgba(255,255,255,.14);
+  background: transparent;
+  color: rgba(255,255,255,.5);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all .3s;
+  font-family: inherit;
+}
+.pd-variant-pill.active,
+.pd-variant-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-b);
+}
+
+/* footer fixo do modal */
+.pd-footer {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(to top, #0a0a0a 80%, transparent);
+  padding: 16px 20px 20px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.pd-add-btn {
+  flex: 1;
+  padding: 14px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #3a9e6a, #2a7a50);
+  color: #fff;
+  font-size: 12px;
+  letter-spacing: 2px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .3s;
+  font-family: inherit;
+}
+.pd-add-btn:hover {
+  background: linear-gradient(135deg, #4ab87a, #35905e);
+  box-shadow: 0 4px 20px rgba(74,160,100,.3);
+}
+.pd-add-btn.creative-btn {
+  background: linear-gradient(135deg, #7a4abf, #5a2a9e);
+}
+.pd-add-btn.creative-btn:hover {
+  background: linear-gradient(135deg, #9060d8, #6a38b8);
+  box-shadow: 0 4px 20px rgba(130,80,255,.3);
+}
 
 /* ═══════════════════════════════════════════
    ADMIN — estilos (mantidos do original)
@@ -1120,7 +1415,7 @@ html, body {
 .img-upload-zone input[type="file"] { display: none; }
 .img-upload-icon { font-size: 24px; margin-bottom: 8px; }
 .img-upload-text { font-size: 10px; opacity: .4; letter-spacing: .5px; }
-.img-preview { width: 100%; height: 140px; object-fit: cover; display: block; border-radius: 7px; }
+.img-preview { width: 100%; height: 140px; object-fit: contain; display: block; border-radius: 7px; padding: 4px; }
 .img-preview-clear {
   position: absolute;
   top: 6px; right: 6px;
@@ -1225,14 +1520,14 @@ html, body {
 .product-item-thumb {
   width: 44px; height: 44px;
   border-radius: 6px;
-  object-fit: cover;
+  object-fit: contain;
   background: #111;
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   font-size: 20px;
   overflow: hidden;
 }
-.product-item-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.product-item-thumb img { width: 100%; height: 100%; object-fit: contain; padding: 2px; }
 .product-item-info { flex: 1; min-width: 0; }
 .product-item-name {
   font-size: 11.5px;
@@ -1244,6 +1539,62 @@ html, body {
 .product-item-meta { font-size: 9.5px; opacity: .4; display: flex; gap: 8px; }
 .product-item-price { color: var(--green); opacity: 1 !important; font-weight: 600; }
 .product-item-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+/* ── Galeria de fotos extras no admin (NOVO) ── */
+.extra-photos-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+.extra-photo-thumb {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #111;
+  border: .5px solid rgba(255,255,255,.1);
+}
+.extra-photo-thumb img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  padding: 2px;
+}
+.extra-photo-remove {
+  position: absolute;
+  top: 3px; right: 3px;
+  background: rgba(0,0,0,.75);
+  border: none;
+  color: #fff;
+  border-radius: 50%;
+  width: 18px; height: 18px;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .2s;
+}
+.extra-photo-remove:hover { background: rgba(255,60,60,.85); }
+
+.extra-photos-add {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  border: 1px dashed rgba(255,255,255,.15);
+  background: transparent;
+  color: rgba(255,255,255,.3);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .2s;
+}
+.extra-photos-add:hover { border-color: rgba(94,202,138,.4); color: var(--green); }
+
+/* ── Campo URL modelo 3D no admin (NOVO) ── */
+.field-3d-hint {
+  font-size: 9px;
+  opacity: .35;
+  margin-top: 5px;
+  line-height: 1.5;
+}
 
 .modal-overlay {
   position: fixed;
@@ -1308,6 +1659,7 @@ html, body {
   .admin-content { grid-template-columns: 1fr; }
   .admin-form-panel { border-right: none; border-bottom: .5px solid rgba(255,255,255,.06); }
   .delivery-options { flex-direction: column; }
+  .pd-gallery-main { height: 220px; }
 }
 @media (max-width: 800px) {
   .admin-content { grid-template-columns: 1fr; }
