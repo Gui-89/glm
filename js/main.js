@@ -328,7 +328,7 @@ function sendOrder() {
     notes ? `*Obs:* ${notes}` : null,
   ].filter(l => l !== null).join('\n');
 
-  const waNumber = '5561999999999';
+  const waNumber = '5561983156915';
   const url = `https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`;
   window.open(url, '_blank');
 }
