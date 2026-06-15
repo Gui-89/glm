@@ -1,9 +1,11 @@
 /* ═══════════════════════════════════════════
-   GLM UNIVERSE — style.css  v5
-   Mudanças vs v4:
-   · card-img: altura maior + object-fit contain para não cortar foto
-   · estilos do modal de detalhe do produto (product-detail-overlay)
-   · estilos do viewer 3D embutido no modal
+   GLM UNIVERSE — style.css  v6
+   Mudanças vs v5:
+   · card-img: object-fit contain + sem corte (FIX)
+   · pd-overlay: modal de detalhe do produto (NOVO)
+   · pd-gallery: galeria multi-foto com nav (NOVO)
+   · pd-3d-viewer: visualizador 3D embutido (NOVO)
+   · checkout-overlay já estava — mantido intacto
    ═══════════════════════════════════════════ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -235,7 +237,7 @@ html, body {
 .card-creative { background: #0c0918; border: .5px solid rgba(130,80,255,.2); }
 .card-creative:hover { border-color: rgba(160,110,232,.65); box-shadow: 0 10px 30px rgba(130,80,255,.2); }
 
-/* FIX v5: altura maior + contain para não cortar a foto */
+/* FIX v6: object-fit contain — foto inteira sem corte */
 .card-img {
   height: 160px;
   display: flex;
@@ -248,8 +250,8 @@ html, body {
 .card-img img {
   width: 100%;
   height: 100%;
-  object-fit: contain;   /* ← era cover; contain garante foto inteira sem corte */
-  padding: 6px;          /* respiro visual nas bordas */
+  object-fit: contain;   /* garante foto inteira, sem corte */
+  padding: 8px;
   position: absolute;
   inset: 0;
 }
@@ -883,7 +885,9 @@ html, body {
 .btn-send-order:active { transform: scale(.98); }
 
 /* ═══════════════════════════════════════════
-   PRODUCT DETAIL MODAL  (NOVO — v5)
+   PRODUCT DETAIL MODAL  (v6 — NOVO)
+   Bottom-sheet responsivo com galeria multi-foto
+   e visualizador 3D embutido
    ═══════════════════════════════════════════ */
 .pd-overlay {
   position: fixed;
@@ -897,9 +901,7 @@ html, body {
   -webkit-backdrop-filter: blur(6px);
   padding: 0;
 }
-.pd-overlay.open {
-  display: flex;
-}
+.pd-overlay.open { display: flex; }
 
 .pd-modal {
   background: #0a0a0a;
@@ -914,11 +916,9 @@ html, body {
   display: flex;
   flex-direction: column;
 }
-.pd-overlay.open .pd-modal {
-  transform: translateY(0);
-}
+.pd-overlay.open .pd-modal { transform: translateY(0); }
 
-/* handle de arrasto (visual) */
+/* handle visual */
 .pd-handle {
   width: 38px; height: 4px;
   background: rgba(255,255,255,.15);
@@ -973,13 +973,13 @@ html, body {
 .pd-gallery-main img {
   max-width: 100%;
   max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   padding: 12px;
   transition: opacity .3s;
 }
-.pd-gallery-main .pd-emoji-big {
-  font-size: 72px;
-}
+.pd-gallery-main .pd-emoji-big { font-size: 72px; }
 
 /* botões nav galeria */
 .pd-gallery-nav {
@@ -1030,7 +1030,7 @@ html, body {
 }
 .pd-thumb.active { border-color: var(--accent); }
 
-/* badge 3D no canto da galeria */
+/* badge 3D */
 .pd-3d-badge {
   position: absolute;
   top: 10px; left: 10px;
@@ -1055,6 +1055,7 @@ html, body {
   width: 100%;
   height: 280px;
   position: relative;
+  background: #070707;
 }
 .pd-3d-viewer.active { display: block; }
 .pd-3d-viewer canvas {
@@ -1070,7 +1071,7 @@ html, body {
   pointer-events: none;
 }
 
-/* ── Conteúdo do modal ── */
+/* ── Corpo do modal ── */
 .pd-body {
   padding: 20px 20px 28px;
   display: flex;
@@ -1186,7 +1187,7 @@ html, body {
 }
 
 /* ═══════════════════════════════════════════
-   ADMIN — estilos (mantidos do original)
+   ADMIN — estilos mantidos intactos
    ═══════════════════════════════════════════ */
 .admin-root {
   min-height: 100vh;
@@ -1588,13 +1589,51 @@ html, body {
 }
 .extra-photos-add:hover { border-color: rgba(94,202,138,.4); color: var(--green); }
 
-/* ── Campo URL modelo 3D no admin (NOVO) ── */
+/* ── Campo arquivo 3D no admin (NOVO) ── */
 .field-3d-hint {
   font-size: 9px;
   opacity: .35;
   margin-top: 5px;
   line-height: 1.5;
 }
+
+/* ── Upload zona de arquivo 3D ── */
+.file3d-upload-zone {
+  border: 1px dashed rgba(201,166,255,.25);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .3s;
+  position: relative;
+  background: rgba(130,80,255,.03);
+}
+.file3d-upload-zone:hover { border-color: rgba(201,166,255,.5); background: rgba(130,80,255,.06); }
+.file3d-upload-zone.has-file { border-style: solid; border-color: rgba(201,166,255,.35); }
+.file3d-upload-zone input[type="file"] { display: none; }
+.file3d-icon { font-size: 22px; margin-bottom: 6px; display: block; }
+.file3d-name {
+  font-size: 10px;
+  color: var(--purple);
+  margin-top: 4px;
+  word-break: break-all;
+}
+.file3d-clear {
+  position: absolute;
+  top: 6px; right: 6px;
+  background: rgba(0,0,0,.7);
+  border: none;
+  color: #fff;
+  border-radius: 50%;
+  width: 20px; height: 20px;
+  font-size: 11px;
+  cursor: pointer;
+  display: none;
+  align-items: center; justify-content: center;
+  transition: background .2s;
+}
+.file3d-clear:hover { background: rgba(255,60,60,.8); }
+.file3d-upload-zone.has-file .file3d-clear { display: flex; }
 
 .modal-overlay {
   position: fixed;
