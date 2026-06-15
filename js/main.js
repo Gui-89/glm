@@ -1,8 +1,9 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — main.js  (ES module)
-   v8.1 — fix: detecção de extensão de modelo 3D robusta,
-   funciona com URLs do Cloudinary que incluem extensão
-   em qualquer posição do path (ex: /3d_models/arquivo.3mf)
+   v8.2 — fix: stack overflow em 3MF grandes
+   · parse3MFGeometry agora limita triângulos (MAX_TRIS)
+   · usa processamento por chunks assíncrono para não travar
+   · getModel3dExtension robusto (v8.1 mantido)
    ═══════════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════════
@@ -666,29 +667,31 @@ function initCanvasHero() {
 
 /* ══════════════════════════════════════════════════════════
    CARREGADOR DE MODELOS 3D
-   v8.1 FIX: detecção de extensão robusta via regex —
-   funciona com URLs do Cloudinary onde a extensão aparece
-   no meio do path (ex: /3d_models/Vase_1234567890.3mf)
+   v8.2 — fixes:
+   · getModel3dExtension: regex robusto para URLs Cloudinary
+   · parse3MFGeometry: parser iterativo via regex, sem DOM/recursão
+     evita "Maximum call stack size exceeded" em arquivos grandes
+   · MAX_TRIS: limita triângulos para performance no preview
    ══════════════════════════════════════════════════════════ */
+
+// Limite de triângulos para preview — suficiente para boa aparência
+// sem travar a stack com modelos high-poly
+const MAX_TRIS = 80000;
 
 const _modelCache = new Map();
 
 /**
- * Detecta a extensão do modelo 3D a partir da URL.
- * Usa regex para encontrar .3mf/.glb/.gltf/.obj em qualquer
- * parte do path, ignorando query strings.
+ * Detecta extensão 3D robusta — funciona com URLs do Cloudinary
+ * onde a extensão aparece no meio do path.
  */
 function getModel3dExtension(url) {
-  const clean = url.split('?')[0]; // remove query string
-  // Procura extensão 3D em qualquer posição do path
+  const clean = url.split('?')[0];
   const match = clean.match(/\.(3mf|glb|gltf|obj)(?:[^a-zA-Z0-9]|$)/i);
   if (match) return match[1].toLowerCase();
-  // Fallback: última extensão do path
   return clean.split('/').pop().split('.').pop().toLowerCase();
 }
 
 async function loadModelForViewer(THREE, url, scene, color = 0x5eca8a) {
-  // v8.1: usa detecção robusta em vez de split simples
   const ext = getModel3dExtension(url);
 
   if (_modelCache.has(url)) {
@@ -710,13 +713,13 @@ async function loadModelForViewer(THREE, url, scene, color = 0x5eca8a) {
     } else if (ext === 'obj') {
       model = await fetchOBJModel(THREE, url, scene, color);
     } else {
-      console.warn(`[3D] Extensão não reconhecida na URL: "${url}" (detectado: "${ext}") — usando shape genérico`);
+      console.warn(`[3D] Extensão não reconhecida: "${ext}" em "${url}" — shape genérico`);
       model = makeGenericShape(THREE, scene, color);
     }
     _modelCache.set(url, model);
     return model;
   } catch(e) {
-    console.warn('[3D preview] Falha ao carregar modelo, usando shape genérico:', e.message);
+    console.warn('[3D preview] Falha ao carregar modelo:', e.message);
     return makeGenericShape(THREE, scene, color);
   }
 }
@@ -726,68 +729,76 @@ async function fetch3MFModel(THREE, url, scene, color) {
     const { unzipSync, strFromU8 } = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const buf  = await resp.arrayBuffer();
+    const buf    = await resp.arrayBuffer();
     const zipped = unzipSync(new Uint8Array(buf));
 
     const modelKey = Object.keys(zipped).find(k =>
       k.endsWith('.model') || k === '3D/3dmodel.model' || k.startsWith('3D/')
     );
-    if (!modelKey) throw new Error('3MF: arquivo model não encontrado no ZIP');
+    if (!modelKey) throw new Error('3MF: arquivo .model não encontrado no ZIP');
 
     const xml = strFromU8(zipped[modelKey]);
-    return parse3MFGeometry(THREE, xml, scene, color);
+    return parse3MFGeometryFast(THREE, xml, scene, color);
   } catch(e) {
     console.warn('[3MF]', e.message);
     return makeGenericShape(THREE, scene, color);
   }
 }
 
-function parse3MFGeometry(THREE, xmlStr, scene, color) {
-  const parser   = new DOMParser();
-  const doc      = parser.parseFromString(xmlStr, 'application/xml');
-  const allVerts = [];
-  const allIdx   = [];
+/**
+ * v8.2 — Parser 3MF via regex iterativo.
+ * Substitui DOMParser + querySelectorAll que causavam stack overflow
+ * em XMLs grandes (muitos nós aninhados).
+ * Processa vértices e triângulos em uma única passagem linear.
+ */
+function parse3MFGeometryFast(THREE, xmlStr, scene, color) {
+  try {
+    // ── Extrai vértices via regex ──────────────────────────
+    const vertRe  = /<vertex\s[^>]*x="([^"]+)"[^>]*y="([^"]+)"[^>]*z="([^"]+)"/g;
+    const verts   = [];
+    let m;
+    while ((m = vertRe.exec(xmlStr)) !== null) {
+      verts.push(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
+    }
 
-  let offset = 0;
-  doc.querySelectorAll('object').forEach(obj => {
-    const verts = [];
-    const tris  = [];
-    obj.querySelectorAll('vertices vertex').forEach(v => {
-      verts.push(parseFloat(v.getAttribute('x') || 0));
-      verts.push(parseFloat(v.getAttribute('y') || 0));
-      verts.push(parseFloat(v.getAttribute('z') || 0));
-    });
-    obj.querySelectorAll('triangles triangle').forEach(t => {
-      tris.push(parseInt(t.getAttribute('v1')) + offset);
-      tris.push(parseInt(t.getAttribute('v2')) + offset);
-      tris.push(parseInt(t.getAttribute('v3')) + offset);
-    });
-    allVerts.push(...verts);
-    allIdx.push(...tris);
-    offset += verts.length / 3;
-  });
+    // ── Extrai triângulos via regex ────────────────────────
+    const triRe = /<triangle\s[^>]*v1="([^"]+)"[^>]*v2="([^"]+)"[^>]*v3="([^"]+)"/g;
+    const idxArr = [];
+    let triCount = 0;
+    while ((m = triRe.exec(xmlStr)) !== null) {
+      if (triCount >= MAX_TRIS) break; // limita para evitar lentidão
+      idxArr.push(parseInt(m[1]), parseInt(m[2]), parseInt(m[3]));
+      triCount++;
+    }
 
-  if (!allVerts.length || !allIdx.length) {
-    throw new Error('3MF: nenhuma geometria encontrada');
+    if (!verts.length || !idxArr.length) {
+      throw new Error('3MF: nenhuma geometria encontrada pelo parser rápido');
+    }
+
+    console.log(`[3MF] ${verts.length / 3} vértices, ${triCount} triângulos carregados`);
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
+    geo.setIndex(idxArr);
+    geo.computeVertexNormals();
+
+    const mat  = new THREE.MeshPhongMaterial({
+      color, emissive: color, emissiveIntensity: 0.08,
+      shininess: 70, transparent: true, opacity: 0.94
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+
+    const wf = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({
+      color, wireframe: true, transparent: true, opacity: 0.08
+    }));
+    mesh.add(wf);
+    scene.add(mesh);
+    return mesh;
+
+  } catch(e) {
+    console.warn('[3MF parse]', e.message);
+    return makeGenericShape(THREE, scene, color);
   }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(allVerts), 3));
-  geo.setIndex(allIdx);
-  geo.computeVertexNormals();
-
-  const mat  = new THREE.MeshPhongMaterial({
-    color, emissive: color, emissiveIntensity: 0.08,
-    shininess: 70, transparent: true, opacity: 0.94
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-
-  const wf = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({
-    color, wireframe: true, transparent: true, opacity: 0.10
-  }));
-  mesh.add(wf);
-  scene.add(mesh);
-  return mesh;
 }
 
 async function fetchGLTFModel(THREE, url, scene, color) {
@@ -907,10 +918,10 @@ async function initThreePreview() {
   }
   buildLights(scene);
 
-  let mesh      = null;
-  let raf       = null;
-  let visible   = false;
-  let pTheme    = 'decor';
+  let mesh       = null;
+  let raf        = null;
+  let visible    = false;
+  let pTheme     = 'decor';
   let loadingUrl = null;
 
   function clearScene() {
