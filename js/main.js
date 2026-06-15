@@ -1,14 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — main.js  (ES module)
-   v7.0 — novidades:
-   · Modal de detalhe do produto (pd-overlay) com galeria multi-foto
-   · Fotos extras (extraPhotos[]) suportadas
-   · Campo model3dUrl para preview 3D no modal
-   · Fix: foto não cortada (object-fit: contain)
+   v8.0 — novidades vs v7:
+   · Hover preview 3D carrega o modelo REAL do produto
+     (suporte a .3mf via parse manual, .glb/.gltf via GLTFLoader,
+      .obj via OBJLoader — fallback para shape genérico)
+   · Cache de modelos para evitar re-download no hover
+   · Restante do código mantido intacto
    ═══════════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════════
-   TEMA — registrado primeiro, sem dependências externas
+   TEMA
    ══════════════════════════════════════════════════════════ */
 const THEME = {
   decor: {
@@ -76,19 +77,16 @@ function applyTheme(t) {
   if (dot)  dot.className    = T.dot;
   if (ltxt) ltxt.textContent = T.liveText;
 
-  // Vídeo hero — troca de fonte conforme o tema
   const video = document.getElementById('hero-video');
   if (video) {
     const newSrc = t === 'creative' ? 'assets/video-hero.mp4' : 'assets/video2-hero.mp4';
     const source = video.querySelector('source');
     const currentSrc = source?.getAttribute('src') || '';
-
     if (source && !currentSrc.endsWith(newSrc.split('/').pop())) {
       source.setAttribute('src', newSrc);
       video.load();
       video.play().catch(() => {});
     }
-
     video.style.filter = t === 'creative'
       ? 'hue-rotate(200deg) saturate(0.8) brightness(0.45)'
       : 'brightness(0.45) saturate(0.7)';
@@ -112,7 +110,6 @@ document.getElementById('btn-d')?.addEventListener('click', () => {
   if (currentTheme === 'decor') return;
   applyTheme('decor');
 });
-
 document.getElementById('btn-c')?.addEventListener('click', () => {
   if (currentTheme === 'creative') return;
   applyTheme('creative');
@@ -127,14 +124,8 @@ try { cart = JSON.parse(localStorage.getItem('glm_cart') || '[]'); } catch(_) {}
 function saveCart() {
   try { localStorage.setItem('glm_cart', JSON.stringify(cart)); } catch(_) {}
 }
-
-function cartTotal() {
-  return cart.reduce((s, i) => s + i.price * i.qty, 0);
-}
-
-function cartCount() {
-  return cart.reduce((s, i) => s + i.qty, 0);
-}
+function cartTotal() { return cart.reduce((s, i) => s + i.price * i.qty, 0); }
+function cartCount() { return cart.reduce((s, i) => s + i.qty, 0); }
 
 function addToCart(prod, variantLabel = null, variantPrice = null) {
   const price = variantPrice ?? prod.price ?? 0;
@@ -143,28 +134,15 @@ function addToCart(prod, variantLabel = null, variantPrice = null) {
   if (idx >= 0) {
     cart[idx].qty++;
   } else {
-    cart.push({
-      key,
-      id:       prod.id,
-      name:     prod.name,
-      emoji:    prod.emoji   || '📦',
-      imageUrl: prod.imageUrl || null,
-      price,
-      variant:  variantLabel,
-      qty:      1,
-    });
+    cart.push({ key, id: prod.id, name: prod.name, emoji: prod.emoji || '📦',
+      imageUrl: prod.imageUrl || null, price, variant: variantLabel, qty: 1 });
   }
-  saveCart();
-  renderCart();
-  updateCartFab();
-  showCartToast(prod.name);
+  saveCart(); renderCart(); updateCartFab(); showCartToast(prod.name);
 }
 
 function removeFromCart(key) {
   cart = cart.filter(i => i.key !== key);
-  saveCart();
-  renderCart();
-  updateCartFab();
+  saveCart(); renderCart(); updateCartFab();
 }
 
 function changeQty(key, delta) {
@@ -173,9 +151,7 @@ function changeQty(key, delta) {
   const newQty = cart[idx].qty + delta;
   if (newQty <= 0) { removeFromCart(key); return; }
   cart[idx].qty = newQty;
-  saveCart();
-  renderCart();
-  updateCartFab();
+  saveCart(); renderCart(); updateCartFab();
 }
 
 function updateCartFab() {
@@ -252,7 +228,7 @@ function closeCart() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   CHECKOUT — overlay (sem redirect)
+   CHECKOUT
    ══════════════════════════════════════════════════════════ */
 let selectedPayment  = 'pix';
 let selectedDelivery = 'retirada';
@@ -260,7 +236,6 @@ let selectedDelivery = 'retirada';
 function openCheckout() {
   if (!cart.length) return;
   closeCart();
-
   const summaryEl = document.getElementById('checkout-items-summary');
   const totalEl   = document.getElementById('checkout-total-display');
   if (summaryEl) {
@@ -272,7 +247,6 @@ function openCheckout() {
       </div>`).join('');
   }
   if (totalEl) totalEl.textContent = fmtBRL(cartTotal());
-
   document.getElementById('checkout-overlay')?.classList.add('open');
 }
 
@@ -290,38 +264,29 @@ function sendOrder() {
   if (!name)  { if (errEl) errEl.textContent = 'Por favor, informe seu nome.'; return; }
   if (!phone) { if (errEl) errEl.textContent = 'Por favor, informe seu WhatsApp.'; return; }
   if (selectedDelivery === 'entrega' && !address) {
-    if (errEl) errEl.textContent = 'Por favor, informe o endereço de entrega.';
-    return;
+    if (errEl) errEl.textContent = 'Por favor, informe o endereço de entrega.'; return;
   }
   if (errEl) errEl.textContent = '';
 
   const lines = cart.map(i =>
     `• ${i.qty}x ${i.name}${i.variant ? ` (${i.variant})` : ''} — ${fmtBRL(i.price * i.qty)}`
   );
-  const total    = fmtBRL(cartTotal());
-  const entrega  = selectedDelivery === 'entrega'
+  const entrega   = selectedDelivery === 'entrega'
     ? `🚚 Entrega em: ${address}`
     : '🏪 Retirada (combinar local)';
   const pagamento = { pix:'💠 PIX', cartao:'💳 Cartão', dinheiro:'💵 Dinheiro' }[selectedPayment] || '';
 
   const msg = [
-    `*Novo Pedido — GLM Universe* 🛍️`,
-    ``,
-    `*Cliente:* ${name}`,
-    `*WhatsApp:* ${phone}`,
-    ``,
-    `*Itens:*`,
-    ...lines,
-    ``,
-    `*Total:* ${total}`,
+    `*Novo Pedido — GLM Universe* 🛍️`, ``,
+    `*Cliente:* ${name}`, `*WhatsApp:* ${phone}`, ``,
+    `*Itens:*`, ...lines, ``,
+    `*Total:* ${fmtBRL(cartTotal())}`,
     `*Entrega:* ${entrega}`,
     `*Pagamento:* ${pagamento}`,
     notes ? `*Obs:* ${notes}` : null,
   ].filter(l => l !== null).join('\n');
 
-  const waNumber = '5561983156915';
-  const url = `https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`;
-  window.open(url, '_blank');
+  window.open(`https://wa.me/5561983156915?text=${encodeURIComponent(msg)}`, '_blank');
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -330,26 +295,15 @@ function sendOrder() {
 function openVariantModal(prod) {
   const ov = document.getElementById('variant-overlay');
   if (!ov) return;
-
   const vars = prod.variations || [];
-
   document.getElementById('vm-name').textContent  = prod.name;
   document.getElementById('vm-price').textContent = fmtBRL(prod.price ?? 0);
-
   const container = document.getElementById('vm-variants');
   container.innerHTML = '';
-
-  if (!vars.length) {
-    addToCart(prod);
-    return;
-  }
+  if (!vars.length) { addToCart(prod); return; }
 
   const byType = {};
-  vars.forEach(v => {
-    if (!byType[v.type]) byType[v.type] = [];
-    byType[v.type].push(v);
-  });
-
+  vars.forEach(v => { if (!byType[v.type]) byType[v.type] = []; byType[v.type].push(v); });
   let selected = {};
 
   Object.entries(byType).forEach(([type, variants]) => {
@@ -358,41 +312,31 @@ function openVariantModal(prod) {
     group.innerHTML = `<span class="variant-group-label">${type.toUpperCase()}</span>`;
     const pills = document.createElement('div');
     pills.className = 'variant-pills';
-
     variants.forEach(v => {
       const btn = document.createElement('button');
-      btn.className = 'variant-pill';
-      btn.type = 'button';
+      btn.className = 'variant-pill'; btn.type = 'button';
       btn.textContent = v.label + (v.price ? ` (+${fmtBRL(v.price - (prod.price || 0))})` : '');
       btn.addEventListener('click', () => {
         pills.querySelectorAll('.variant-pill').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         selected[type] = v;
         const prices = Object.values(selected).map(s => s.price).filter(Boolean);
-        const shown  = prices.length ? Math.max(...prices) : (prod.price ?? 0);
-        document.getElementById('vm-price').textContent = fmtBRL(shown);
+        document.getElementById('vm-price').textContent = fmtBRL(prices.length ? Math.max(...prices) : (prod.price ?? 0));
       });
       pills.appendChild(btn);
     });
-    group.appendChild(pills);
-    container.appendChild(group);
+    group.appendChild(pills); container.appendChild(group);
   });
 
-  const btnAdd = document.getElementById('vm-add');
-  btnAdd.onclick = () => {
+  document.getElementById('vm-add').onclick = () => {
     const label  = Object.values(selected).map(s => s.label).join(' / ') || null;
     const prices = Object.values(selected).map(s => s.price).filter(Boolean);
-    const price  = prices.length ? Math.max(...prices) : (prod.price ?? 0);
-    addToCart(prod, label, price);
-    ov.classList.remove('open');
-    ov.style.display = '';
+    addToCart(prod, label, prices.length ? Math.max(...prices) : (prod.price ?? 0));
+    ov.classList.remove('open'); ov.style.display = '';
   };
-
   document.getElementById('vm-cancel').onclick = () => {
-    ov.classList.remove('open');
-    ov.style.display = '';
+    ov.classList.remove('open'); ov.style.display = '';
   };
-
   ov.style.display = 'flex';
   requestAnimationFrame(() => ov.classList.add('open'));
 }
@@ -400,15 +344,15 @@ function openVariantModal(prod) {
 /* ══════════════════════════════════════════════════════════
    PRODUCT DETAIL MODAL
    ══════════════════════════════════════════════════════════ */
-let _pdProd        = null;   // produto atual no modal
-let _pdImgIndex    = 0;      // foto atual na galeria
-let _pdImgs        = [];     // array de URLs de fotos
-let _pd3dRaf       = null;   // requestAnimationFrame do viewer 3D
-let _pd3dRenderer  = null;   // THREE.WebGLRenderer
-let _pd3dScene     = null;
-let _pd3dCamera    = null;
-let _pd3dMesh      = null;
-let _pd3dActive    = false;
+let _pdProd       = null;
+let _pdImgIndex   = 0;
+let _pdImgs       = [];
+let _pd3dRaf      = null;
+let _pd3dRenderer = null;
+let _pd3dScene    = null;
+let _pd3dCamera   = null;
+let _pd3dMesh     = null;
+let _pd3dActive   = false;
 
 function buildPdImages(prod) {
   const imgs = [];
@@ -421,23 +365,16 @@ function buildPdImages(prod) {
 
 function pdSetImage(idx) {
   _pdImgIndex = idx;
-  const mainEl = document.getElementById('pd-main-img');
+  const mainEl  = document.getElementById('pd-main-img');
   const emojiEl = document.getElementById('pd-main-emoji');
-
   if (_pdImgs.length) {
-    if (mainEl) { mainEl.src = _pdImgs[idx]; mainEl.style.display = 'block'; }
+    if (mainEl)  { mainEl.src = _pdImgs[idx]; mainEl.style.display = 'block'; }
     if (emojiEl) emojiEl.style.display = 'none';
   } else {
-    if (mainEl) mainEl.style.display = 'none';
+    if (mainEl)  mainEl.style.display = 'none';
     if (emojiEl) { emojiEl.textContent = _pdProd?.emoji || '📦'; emojiEl.style.display = 'flex'; }
   }
-
-  // thumbs
-  document.querySelectorAll('.pd-thumb').forEach((t, i) => {
-    t.classList.toggle('active', i === idx);
-  });
-
-  // nav buttons
+  document.querySelectorAll('.pd-thumb').forEach((t, i) => t.classList.toggle('active', i === idx));
   const prev = document.getElementById('pd-nav-prev');
   const next = document.getElementById('pd-nav-next');
   if (prev) prev.disabled = idx === 0;
@@ -454,11 +391,8 @@ function pdStop3d() {
 }
 
 async function pdStart3d(modelUrl) {
-  // Se for uma URL de preview (glb/obj) carrega Three.js e exibe
-  // Por ora: exibe o canvas 3D animado (shape genérico) como preview
-  // quando tivermos o GLBLoader podemos trocar aqui
-  const viewer  = document.getElementById('pd-3d-viewer');
-  const canvas  = document.getElementById('pd-3d-canvas');
+  const viewer   = document.getElementById('pd-3d-viewer');
+  const canvas   = document.getElementById('pd-3d-canvas');
   const mainZone = document.getElementById('pd-gallery-main');
   if (!viewer || !canvas) return;
 
@@ -466,67 +400,58 @@ async function pdStart3d(modelUrl) {
   viewer.classList.add('active');
   _pd3dActive = true;
 
-  // Se já temos renderer, só reativa
   if (_pd3dRenderer) {
     function loop3d() {
       if (!_pd3dActive) return;
-      _pd3dMesh && (_pd3dMesh.rotation.x += 0.012, _pd3dMesh.rotation.y += 0.018);
+      if (_pd3dMesh) { _pd3dMesh.rotation.x += 0.012; _pd3dMesh.rotation.y += 0.018; }
       _pd3dRenderer.render(_pd3dScene, _pd3dCamera);
       _pd3dRaf = requestAnimationFrame(loop3d);
     }
-    loop3d();
-    return;
+    loop3d(); return;
   }
 
   let THREE;
   try { THREE = await import('three'); } catch(e) {
-    viewer.classList.remove('active');
-    mainZone.style.display = '';
-    return;
+    viewer.classList.remove('active'); mainZone.style.display = ''; return;
   }
 
   _pd3dRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   _pd3dRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   _pd3dRenderer.setClearColor(0x000000, 0);
-
   const w = viewer.clientWidth || 400;
   const h = viewer.clientHeight || 300;
   _pd3dRenderer.setSize(w, h);
 
   _pd3dScene  = new THREE.Scene();
-  _pd3dCamera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
+  _pd3dCamera = new THREE.PerspectiveCamera(45, w / h, 0.01, 1000);
   _pd3dCamera.position.set(0, 0, 3.2);
-
   _pd3dScene.add(new THREE.AmbientLight(0xffffff, 0.4));
   const pl = new THREE.PointLight(0xffffff, 1.2, 10);
-  pl.position.set(2, 3, 3);
-  _pd3dScene.add(pl);
-
-  const SHAPES = [
-    new THREE.BoxGeometry(1.2, 1.2, 1.2),
-    new THREE.IcosahedronGeometry(0.85, 0),
-    new THREE.OctahedronGeometry(1, 0),
-    new THREE.TorusGeometry(0.7, 0.28, 16, 40),
-  ];
+  pl.position.set(2, 3, 3); _pd3dScene.add(pl);
 
   const col = currentTheme === 'creative' ? 0xc9a6ff : 0x5eca8a;
-  const geo = SHAPES[Math.floor(Math.random() * SHAPES.length)];
-  _pd3dMesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
-    color: col, emissive: col, emissiveIntensity: 0.15,
-    shininess: 80, transparent: true, opacity: 0.92
-  }));
-  _pd3dScene.add(_pd3dMesh);
 
-  const wf = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({
-    color: col, wireframe: true, transparent: true, opacity: 0.2
-  }));
-  wf.scale.setScalar(1.005);
-  _pd3dMesh.add(wf);
+  // Tenta carregar modelo real
+  _pd3dMesh = await loadModelForViewer(THREE, modelUrl, _pd3dScene, col);
+
+  // Ajusta câmera ao tamanho do modelo
+  if (_pd3dMesh) {
+    const box    = new THREE.Box3().setFromObject(_pd3dMesh);
+    const center = box.getCenter(new THREE.Vector3());
+    const size   = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim > 0) {
+      const scale = 2.0 / maxDim;
+      _pd3dMesh.scale.setScalar(scale);
+      _pd3dMesh.position.sub(center.multiplyScalar(scale));
+    }
+    _pd3dCamera.position.set(0, 0, 3.2);
+    _pd3dCamera.lookAt(0, 0, 0);
+  }
 
   function loop3d() {
     if (!_pd3dActive) return;
-    _pd3dMesh.rotation.x += 0.012;
-    _pd3dMesh.rotation.y += 0.018;
+    if (_pd3dMesh) { _pd3dMesh.rotation.x += 0.008; _pd3dMesh.rotation.y += 0.014; }
     _pd3dRenderer.render(_pd3dScene, _pd3dCamera);
     _pd3dRaf = requestAnimationFrame(loop3d);
   }
@@ -537,18 +462,14 @@ function openProductDetail(prod) {
   _pdProd     = prod;
   _pdImgIndex = 0;
   _pdImgs     = buildPdImages(prod);
-
-  const ov = document.getElementById('pd-overlay');
+  const ov    = document.getElementById('pd-overlay');
   if (!ov) return;
-
-  // Stop qualquer 3D anterior
   pdStop3d();
 
-  // Preenche nome, preço, badge, descrição
-  const nameEl = document.getElementById('pd-name');
-  const priceEl = document.getElementById('pd-price');
-  const badgeEl = document.getElementById('pd-badge-tag');
-  const descEl  = document.getElementById('pd-description');
+  const nameEl   = document.getElementById('pd-name');
+  const priceEl  = document.getElementById('pd-price');
+  const badgeEl  = document.getElementById('pd-badge-tag');
+  const descEl   = document.getElementById('pd-description');
   const catLabel = document.getElementById('pd-category-label');
 
   if (nameEl)  nameEl.textContent  = prod.name || '';
@@ -561,15 +482,10 @@ function openProductDetail(prod) {
       badgeEl.textContent = prod.badge;
       badgeEl.className = `pd-badge-tag ${isCreative ? 'pd-badge-creative' : 'pd-badge-decor'}`;
       badgeEl.style.display = '';
-    } else {
-      badgeEl.style.display = 'none';
-    }
+    } else { badgeEl.style.display = 'none'; }
   }
-  if (catLabel) {
-    catLabel.textContent = isCreative ? '✦ 3D Creative' : '🌿 Essência Decor';
-  }
+  if (catLabel) catLabel.textContent = isCreative ? '✦ 3D Creative' : '🌿 Essência Decor';
 
-  // Galeria — monta thumbs
   const thumbsEl = document.getElementById('pd-thumbs');
   if (thumbsEl) {
     thumbsEl.innerHTML = '';
@@ -582,12 +498,9 @@ function openProductDetail(prod) {
         thumbsEl.appendChild(t);
       });
       thumbsEl.style.display = 'flex';
-    } else {
-      thumbsEl.style.display = 'none';
-    }
+    } else { thumbsEl.style.display = 'none'; }
   }
 
-  // Botão 3D
   const badge3d = document.getElementById('pd-3d-badge');
   if (badge3d) {
     if (prod.model3dUrl) {
@@ -596,12 +509,9 @@ function openProductDetail(prod) {
         if (_pd3dActive) { pdStop3d(); pdSetImage(_pdImgIndex); }
         else pdStart3d(prod.model3dUrl);
       };
-    } else {
-      badge3d.classList.remove('visible');
-    }
+    } else { badge3d.classList.remove('visible'); }
   }
 
-  // Variantes no modal de detalhe
   const varsEl = document.getElementById('pd-variants-container');
   if (varsEl) {
     varsEl.innerHTML = '';
@@ -610,7 +520,6 @@ function openProductDetail(prod) {
       const byType = {};
       vars.forEach(v => { if (!byType[v.type]) byType[v.type] = []; byType[v.type].push(v); });
       let pdSelected = {};
-
       Object.entries(byType).forEach(([type, variants]) => {
         const group = document.createElement('div');
         group.className = 'pd-variant-group';
@@ -619,51 +528,36 @@ function openProductDetail(prod) {
         pills.className = 'pd-variant-pills';
         variants.forEach(v => {
           const btn = document.createElement('button');
-          btn.className = 'pd-variant-pill';
-          btn.type = 'button';
+          btn.className = 'pd-variant-pill'; btn.type = 'button';
           btn.textContent = v.label + (v.price ? ` (+${fmtBRL(v.price - (prod.price || 0))})` : '');
           btn.addEventListener('click', () => {
             pills.querySelectorAll('.pd-variant-pill').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            pdSelected[type] = v;
+            btn.classList.add('active'); pdSelected[type] = v;
             const prices = Object.values(pdSelected).map(s => s.price).filter(Boolean);
-            const shown  = prices.length ? Math.max(...prices) : (prod.price ?? 0);
-            if (priceEl) priceEl.textContent = fmtBRL(shown);
+            if (priceEl) priceEl.textContent = fmtBRL(prices.length ? Math.max(...prices) : (prod.price ?? 0));
           });
           pills.appendChild(btn);
         });
-        group.appendChild(pills);
-        varsEl.appendChild(group);
+        group.appendChild(pills); varsEl.appendChild(group);
       });
-
-      // Botão adicionar usa variante selecionada
       const addBtn = document.getElementById('pd-add-btn');
       if (addBtn) {
         addBtn.onclick = () => {
           const label  = Object.values(pdSelected).map(s => s.label).join(' / ') || null;
           const prices = Object.values(pdSelected).map(s => s.price).filter(Boolean);
-          const price  = prices.length ? Math.max(...prices) : (prod.price ?? 0);
-          addToCart(prod, label, price);
+          addToCart(prod, label, prices.length ? Math.max(...prices) : (prod.price ?? 0));
           closeProductDetail();
         };
       }
     } else {
-      // Sem variantes — botão direto
       const addBtn = document.getElementById('pd-add-btn');
       if (addBtn) addBtn.onclick = () => { addToCart(prod); closeProductDetail(); };
     }
-
-    // Estilo do botão conforme tema
     const addBtn = document.getElementById('pd-add-btn');
-    if (addBtn) {
-      addBtn.className = isCreative ? 'pd-add-btn creative-btn' : 'pd-add-btn';
-    }
+    if (addBtn) addBtn.className = isCreative ? 'pd-add-btn creative-btn' : 'pd-add-btn';
   }
 
-  // Seta imagem inicial
   pdSetImage(0);
-
-  // Abre overlay
   ov.style.display = 'flex';
   requestAnimationFrame(() => ov.classList.add('open'));
   document.body.style.overflow = 'hidden';
@@ -678,21 +572,17 @@ function closeProductDetail() {
   document.body.style.overflow = '';
 }
 
-// Nav galeria
 document.getElementById('pd-nav-prev')?.addEventListener('click', () => {
   if (_pdImgIndex > 0) pdSetImage(_pdImgIndex - 1);
 });
 document.getElementById('pd-nav-next')?.addEventListener('click', () => {
   if (_pdImgIndex < _pdImgs.length - 1) pdSetImage(_pdImgIndex + 1);
 });
-
-// Fechar modal
 document.getElementById('pd-close')?.addEventListener('click', closeProductDetail);
 document.getElementById('pd-overlay')?.addEventListener('click', e => {
   if (e.target === document.getElementById('pd-overlay')) closeProductDetail();
 });
 
-// Swipe no modal (mobile)
 let _pdTouchX = 0;
 document.getElementById('pd-gallery-main')?.addEventListener('touchstart', e => {
   _pdTouchX = e.touches[0].clientX;
@@ -730,8 +620,7 @@ function initCanvasHero() {
     return {
       x: Math.random() * W, y: Math.random() * H,
       r: Math.random() * 1.6 + 0.3,
-      vx: (Math.random() - 0.5) * 0.35,
-      vy: (Math.random() - 0.5) * 0.35,
+      vx: (Math.random() - 0.5) * 0.35, vy: (Math.random() - 0.5) * 0.35,
       a: Math.random() * 0.55 + 0.08,
       col: c[Math.floor(Math.random() * c.length)]
     };
@@ -781,7 +670,209 @@ function initCanvasHero() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   THREE.JS PREVIEW — carregado dinamicamente
+   CARREGADOR DE MODELOS 3D — compartilhado entre preview e modal
+   ══════════════════════════════════════════════════════════ */
+
+// Cache de modelos já carregados (URL → { geometry/scene data })
+const _modelCache = new Map();
+
+/**
+ * Carrega qualquer formato 3D suportado e adiciona à scene.
+ * Retorna o Object3D raiz do modelo (ou shape genérico em caso de erro).
+ */
+async function loadModelForViewer(THREE, url, scene, color = 0x5eca8a) {
+  const ext = url.split('?')[0].split('.').pop().toLowerCase();
+
+  // Cache HIT — clona a geometria sem re-download
+  if (_modelCache.has(url)) {
+    const cached = _modelCache.get(url);
+    if (cached && cached.clone) {
+      const clone = cached.clone();
+      recolorModel(clone, THREE, color);
+      scene.add(clone);
+      return clone;
+    }
+  }
+
+  try {
+    let model;
+    if (ext === '3mf') {
+      model = await fetch3MFModel(THREE, url, scene, color);
+    } else if (ext === 'glb' || ext === 'gltf') {
+      model = await fetchGLTFModel(THREE, url, scene, color);
+    } else if (ext === 'obj') {
+      model = await fetchOBJModel(THREE, url, scene, color);
+    } else {
+      model = makeGenericShape(THREE, scene, color);
+    }
+    // Armazena no cache
+    _modelCache.set(url, model);
+    return model;
+  } catch(e) {
+    console.warn('[3D preview] Falha ao carregar modelo, usando shape genérico:', e.message);
+    return makeGenericShape(THREE, scene, color);
+  }
+}
+
+async function fetch3MFModel(THREE, url, scene, color) {
+  try {
+    // fflate para descomprimir o ZIP do .3mf
+    const { unzipSync, strFromU8 } = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const buf  = await resp.arrayBuffer();
+    const zipped = unzipSync(new Uint8Array(buf));
+
+    // Arquivo model pode estar em diferentes locais dentro do .3mf
+    const modelKey = Object.keys(zipped).find(k =>
+      k.endsWith('.model') || k === '3D/3dmodel.model' || k.startsWith('3D/')
+    );
+    if (!modelKey) throw new Error('3MF: arquivo model não encontrado no ZIP');
+
+    const xml = strFromU8(zipped[modelKey]);
+    return parse3MFGeometry(THREE, xml, scene, color);
+  } catch(e) {
+    console.warn('[3MF]', e.message);
+    return makeGenericShape(THREE, scene, color);
+  }
+}
+
+function parse3MFGeometry(THREE, xmlStr, scene, color) {
+  const parser   = new DOMParser();
+  const doc      = parser.parseFromString(xmlStr, 'application/xml');
+  const allVerts = [];
+  const allIdx   = [];
+
+  // Pode ter vários objetos/meshes no .3mf — agrupamos tudo
+  let offset = 0;
+  doc.querySelectorAll('object').forEach(obj => {
+    const verts = [];
+    const tris  = [];
+    obj.querySelectorAll('vertices vertex').forEach(v => {
+      verts.push(parseFloat(v.getAttribute('x') || 0));
+      verts.push(parseFloat(v.getAttribute('y') || 0));
+      verts.push(parseFloat(v.getAttribute('z') || 0));
+    });
+    obj.querySelectorAll('triangles triangle').forEach(t => {
+      tris.push(parseInt(t.getAttribute('v1')) + offset);
+      tris.push(parseInt(t.getAttribute('v2')) + offset);
+      tris.push(parseInt(t.getAttribute('v3')) + offset);
+    });
+    allVerts.push(...verts);
+    allIdx.push(...tris);
+    offset += verts.length / 3;
+  });
+
+  if (!allVerts.length || !allIdx.length) {
+    throw new Error('3MF: nenhuma geometria encontrada');
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(allVerts), 3));
+  geo.setIndex(allIdx);
+  geo.computeVertexNormals();
+
+  const mat  = new THREE.MeshPhongMaterial({
+    color, emissive: color, emissiveIntensity: 0.08,
+    shininess: 70, transparent: true, opacity: 0.94
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+
+  // Wireframe suave por cima
+  const wf = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({
+    color, wireframe: true, transparent: true, opacity: 0.10
+  }));
+  mesh.add(wf);
+  scene.add(mesh);
+  return mesh;
+}
+
+async function fetchGLTFModel(THREE, url, scene, color) {
+  const { GLTFLoader } = await import(
+    'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/GLTFLoader.js'
+  );
+  return new Promise((resolve, reject) => {
+    new GLTFLoader().load(url,
+      gltf => {
+        // Aplica cor ao material de todas as meshes
+        gltf.scene.traverse(child => {
+          if (child.isMesh) {
+            child.material = new THREE.MeshPhongMaterial({
+              color, emissive: color, emissiveIntensity: 0.06,
+              shininess: 60, transparent: true, opacity: 0.94
+            });
+          }
+        });
+        scene.add(gltf.scene);
+        resolve(gltf.scene);
+      },
+      null,
+      reject
+    );
+  });
+}
+
+async function fetchOBJModel(THREE, url, scene, color) {
+  const { OBJLoader } = await import(
+    'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/OBJLoader.js'
+  );
+  return new Promise((resolve, reject) => {
+    new OBJLoader().load(url,
+      obj => {
+        obj.traverse(child => {
+          if (child.isMesh) {
+            child.material = new THREE.MeshPhongMaterial({
+              color, emissive: color, emissiveIntensity: 0.06,
+              shininess: 60, transparent: true, opacity: 0.94
+            });
+          }
+        });
+        scene.add(obj);
+        resolve(obj);
+      },
+      null,
+      reject
+    );
+  });
+}
+
+function makeGenericShape(THREE, scene, color) {
+  const SHAPES = [
+    new THREE.BoxGeometry(1.2, 1.2, 1.2),
+    new THREE.IcosahedronGeometry(0.85, 0),
+    new THREE.OctahedronGeometry(1, 0),
+    new THREE.TorusGeometry(0.7, 0.28, 16, 40),
+  ];
+  const geo  = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+  const mat  = new THREE.MeshPhongMaterial({
+    color, emissive: color, emissiveIntensity: 0.12,
+    shininess: 80, transparent: true, opacity: 0.92
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  const wf   = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({
+    color, wireframe: true, transparent: true, opacity: 0.18
+  }));
+  wf.scale.setScalar(1.005);
+  mesh.add(wf);
+  scene.add(mesh);
+  return mesh;
+}
+
+function recolorModel(model, THREE, color) {
+  if (model.traverse) {
+    model.traverse(child => {
+      if (child.isMesh && child.material) {
+        child.material = child.material.clone();
+        child.material.color?.setHex(color);
+        child.material.emissive?.setHex(color);
+      }
+    });
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   THREE.JS PREVIEW — hover nos cards
+   Modificado v8: carrega modelo real se prod.model3dUrl existir
    ══════════════════════════════════════════════════════════ */
 const PREV_COLORS = { decor: 0x5eca8a, creative: 0xc9a6ff };
 
@@ -803,44 +894,60 @@ async function initThreePreview() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0x000000, 0);
 
-  const scene  = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+  // Cena compartilhada — limpa a cada produto exibido
+  let scene  = new THREE.Scene();
+  let camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
   camera.position.set(0, 0, 3.2);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
-  const pl = new THREE.PointLight(0xffffff, 1.2, 10);
-  pl.position.set(2, 3, 3);
-  scene.add(pl);
 
-  const SHAPES = [
-    () => new THREE.BoxGeometry(1.2, 1.2, 1.2),
-    () => new THREE.IcosahedronGeometry(0.85, 0),
-    () => new THREE.OctahedronGeometry(1, 0),
-    () => new THREE.TorusGeometry(0.7, 0.28, 16, 40),
-    () => new THREE.ConeGeometry(0.75, 1.4, 6),
-    () => new THREE.TetrahedronGeometry(1, 0),
-  ];
+  function buildLights(scene) {
+    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+    const pl = new THREE.PointLight(0xffffff, 1.2, 10);
+    pl.position.set(2, 3, 3);
+    scene.add(pl);
+  }
+  buildLights(scene);
 
-  let mesh = null, raf = null, visible = false, pTheme = 'decor';
+  let mesh      = null;
+  let raf       = null;
+  let visible   = false;
+  let pTheme    = 'decor';
+  let loadingUrl = null;   // evita corrida de carregamento
 
-  function buildMesh(idx) {
-    if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
-    const geo = SHAPES[idx % SHAPES.length]();
-    const col = PREV_COLORS[pTheme];
-    mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
-      color: col, emissive: col, emissiveIntensity: 0.12,
-      shininess: 80, transparent: true, opacity: 0.92
-    }));
-    scene.add(mesh);
-    const wf = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({
-      color: col, wireframe: true, transparent: true, opacity: 0.18
-    }));
-    wf.scale.setScalar(1.005);
-    mesh.add(wf);
+  function clearScene() {
+    // Remove objetos anteriores (exceto luzes)
+    const toRemove = [];
+    scene.traverse(obj => {
+      if (!obj.isLight && obj !== scene) toRemove.push(obj);
+    });
+    toRemove.forEach(obj => {
+      scene.remove(obj);
+      obj.geometry?.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+        else obj.material.dispose();
+      }
+    });
+    mesh = null;
+  }
+
+  function normalizeModel(model) {
+    if (!model) return;
+    const box    = new THREE.Box3().setFromObject(model);
+    const center = box.getCenter(new THREE.Vector3());
+    const size   = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim > 0) {
+      const scale = 1.8 / maxDim;
+      model.scale.setScalar(scale);
+      model.position.sub(center.multiplyScalar(scale));
+    }
+    camera.position.set(0, 0, 3.2);
+    camera.lookAt(0, 0, 0);
   }
 
   function loop() {
     raf = requestAnimationFrame(loop);
-    if (mesh) { mesh.rotation.x += 0.012; mesh.rotation.y += 0.018; }
+    if (mesh) { mesh.rotation.y += 0.018; mesh.rotation.x += 0.006; }
     renderer.render(scene, camera);
   }
 
@@ -852,27 +959,54 @@ async function initThreePreview() {
     wrap.style.top  = t + 'px';
   }
 
-  window._preview = {
-    show(x, y, idx) {
-      buildMesh(idx); pos(x, y);
-      wrap.style.display = 'block';
-      if (!visible) { visible = true; loop(); }
-    },
-    hide() {
-      wrap.style.display = 'none'; visible = false;
-      if (raf) { cancelAnimationFrame(raf); raf = null; }
-    },
-    move(x, y) { if (visible) pos(x, y); },
-    setTheme(t) {
-      pTheme = t;
-      if (!mesh) return;
-      const col = PREV_COLORS[t];
-      mesh.material.color.setHex(col);
-      mesh.material.emissive.setHex(col);
-      mesh.children.forEach(c => { if (c.material?.wireframe) c.material.color.setHex(col); });
-    }
-  };
+  // Exibe preview — carrega modelo real se disponível
+  async function show(x, y, prod) {
+    pos(x, y);
+    wrap.style.display = 'block';
 
+    const color   = PREV_COLORS[pTheme];
+    const modelUrl = prod?.model3dUrl || null;
+
+    // Se já está mostrando o mesmo modelo, apenas anima
+    if (loadingUrl === modelUrl && mesh) {
+      if (!visible) { visible = true; loop(); }
+      return;
+    }
+
+    loadingUrl = modelUrl;
+    clearScene();
+    buildLights(scene);
+
+    if (!visible) { visible = true; loop(); }
+
+    if (modelUrl) {
+      // Carrega modelo real (com cache)
+      mesh = await loadModelForViewer(THREE, modelUrl, scene, color);
+      if (loadingUrl !== modelUrl) return; // outra chamada aconteceu entre essa
+      normalizeModel(mesh);
+    } else {
+      // Shape genérico quando não há modelo 3D
+      mesh = makeGenericShape(THREE, scene, color);
+    }
+  }
+
+  function hide() {
+    wrap.style.display = 'none';
+    visible    = false;
+    loadingUrl = null;
+    if (raf) { cancelAnimationFrame(raf); raf = null; }
+  }
+
+  function move(x, y) { if (visible) pos(x, y); }
+
+  function setTheme(t) {
+    pTheme = t;
+    if (!mesh) return;
+    const col = PREV_COLORS[t];
+    recolorModel(mesh, THREE, col);
+  }
+
+  window._preview = { show, hide, move, setTheme };
   window._preview.setTheme(currentTheme);
 }
 
@@ -889,12 +1023,16 @@ function makeCard(prod, idx) {
     ? `<img src="${prod.imageUrl}" alt="${prod.name}" loading="lazy">`
     : `<span class="emoji-fallback">${prod.emoji || '📦'}</span>`;
   const badge = prod.badge ? `<span class="${T.badge}">${prod.badge}</span>` : '';
+  // Badge 3D no card quando produto tem modelo
+  const badge3d = prod.model3dUrl
+    ? `<span class="card-badge-3d">⬡ 3D</span>`
+    : '';
 
   const hasVars  = prod.variations?.length > 0;
   const btnLabel = hasVars ? '+ VER OPÇÕES' : '+ ADICIONAR';
 
   card.innerHTML = `
-    <div class="${T.ci}">${img}${badge}</div>
+    <div class="${T.ci}">${img}${badge}${badge3d}</div>
     <div class="card-info">
       <div class="${T.name}">${prod.name}</div>
       <div class="${T.price}">${fmtBRL(prod.price ?? 0)}</div>
@@ -902,7 +1040,6 @@ function makeCard(prod, idx) {
     </div>
     <button type="button" class="card-add-btn">${btnLabel}</button>`;
 
-  // Clique no card (exceto no botão) → abre detalhe
   card.addEventListener('click', e => {
     if (e.target.classList.contains('card-add-btn')) return;
     openProductDetail(prod);
@@ -916,7 +1053,8 @@ function makeCard(prod, idx) {
 
   let ht;
   card.addEventListener('mouseenter', e => {
-    ht = setTimeout(() => window._preview?.show(e.clientX, e.clientY, idx), 180);
+    // Passa o produto inteiro (com model3dUrl) para o preview
+    ht = setTimeout(() => window._preview?.show(e.clientX, e.clientY, prod), 200);
   });
   card.addEventListener('mousemove',  e => window._preview?.move(e.clientX, e.clientY));
   card.addEventListener('mouseleave', () => { clearTimeout(ht); window._preview?.hide(); });
@@ -941,7 +1079,6 @@ function renderGrid(products) {
   const empty   = document.getElementById('empty-state');
 
   if (loading) loading.style.display = 'none';
-
   if (!filtered.length) {
     if (grid)  grid.style.display  = 'none';
     if (empty) empty.style.display = 'block';
@@ -954,7 +1091,7 @@ function renderGrid(products) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   FIRESTORE — carregado dinamicamente, com fallback DEMO
+   FIRESTORE
    ══════════════════════════════════════════════════════════ */
 const DEMO = [
   { id:'1', name:'Quadro Minimalista', price:189, badge:'NOVO', emoji:'🖼️', description:'Arte exclusiva para sua sala',     category:'decor'    },
@@ -984,15 +1121,13 @@ async function initFirebase() {
     firestoreReady = true;
   } catch (e) {
     console.warn('Firebase não inicializado — usando dados demo:', e.message);
-    db = null;
-    firestoreReady = false;
+    db = null; firestoreReady = false;
   }
 }
 
 async function subscribeFirestore() {
   if (unsub) { unsub(); unsub = null; }
   clearTimeout(fallbackTimer);
-
   const loading = document.getElementById('loading-state');
   const grid    = document.getElementById('grid');
   const empty   = document.getElementById('empty-state');
@@ -1000,21 +1135,12 @@ async function subscribeFirestore() {
   if (grid)    grid.style.display    = 'none';
   if (empty)   empty.style.display   = 'none';
 
-  if (!db) {
-    setTimeout(() => renderGrid(DEMO), 300);
-    return;
-  }
+  if (!db) { setTimeout(() => renderGrid(DEMO), 300); return; }
 
   try {
     const { collection, onSnapshot, query, orderBy } = await import('firebase/firestore');
-
-    fallbackTimer = setTimeout(() => {
-      console.warn('Firestore timeout — usando dados demo');
-      renderGrid(DEMO);
-    }, 5000);
-
+    fallbackTimer = setTimeout(() => { console.warn('Firestore timeout'); renderGrid(DEMO); }, 5000);
     const ref = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
-
     unsub = onSnapshot(ref, snap => {
       clearTimeout(fallbackTimer);
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1032,17 +1158,12 @@ async function subscribeFirestore() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   INIT — event listeners
+   EVENT LISTENERS
    ══════════════════════════════════════════════════════════ */
 document.getElementById('cart-fab')?.addEventListener('click', openCart);
 document.getElementById('cart-overlay')?.addEventListener('click', closeCart);
 document.getElementById('cart-close-btn')?.addEventListener('click', closeCart);
-
-document.getElementById('btn-checkout')?.addEventListener('click', () => {
-  if (!cart.length) return;
-  openCheckout();
-});
-
+document.getElementById('btn-checkout')?.addEventListener('click', () => { if (!cart.length) return; openCheckout(); });
 document.getElementById('checkout-back')?.addEventListener('click', closeCheckout);
 document.getElementById('btn-send-order')?.addEventListener('click', sendOrder);
 
@@ -1070,5 +1191,4 @@ initCanvasHero();
 initThreePreview();
 renderCart();
 updateCartFab();
-
 initFirebase().then(() => subscribeFirestore());
