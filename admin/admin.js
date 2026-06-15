@@ -1,11 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — admin.js  (ES module)
-   v6 — novidades:
-   · Upload de arquivo 3D (.3mf / .glb / .gltf / .obj) para Cloudinary
-   · Preview 3D no painel admin via Three.js (3MFLoader para .3mf,
-     GLTFLoader para .glb/.gltf, OBJLoader para .obj)
-   · model3dUrl salvo/carregado no Firestore
-   · Botão de remover modelo 3D existente na edição
+   v6.1 — fix: preserva extensão do arquivo 3D na URL do Cloudinary
+   via public_id com extensão incluída no upload raw.
    ═══════════════════════════════════════════════════════════ */
 
 /* ── DOM REFS ──────────────────────────────────────────────── */
@@ -72,8 +68,8 @@ let unsubProducts   = null;
 let selectedFile    = null;
 let extraPhotoFiles = [];
 let extraPhotoUrls  = [];
-let selected3dFile  = null;   // File do modelo 3D selecionado
-let admin3dRaf      = null;   // animationFrame do preview admin
+let selected3dFile  = null;
+let admin3dRaf      = null;
 let admin3dRenderer = null;
 
 /* ── HELPERS ───────────────────────────────────────────────── */
@@ -157,8 +153,6 @@ extraFileInput?.addEventListener('change', () => {
 
 /* ══════════════════════════════════════════════════════════
    PREVIEW 3D NO ADMIN
-   Suporta .3mf via 3MFLoader, .glb/.gltf via GLTFLoader,
-   .obj via OBJLoader (Three.js r128 — mesmo importmap do site)
    ══════════════════════════════════════════════════════════ */
 function stopAdmin3d() {
   if (admin3dRaf) { cancelAnimationFrame(admin3dRaf); admin3dRaf = null; }
@@ -169,7 +163,6 @@ function stopAdmin3d() {
 async function startAdmin3dPreview(file) {
   stopAdmin3d();
 
-  // Importa Three.js
   let THREE;
   try {
     THREE = await import('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js');
@@ -212,7 +205,6 @@ async function startAdmin3dPreview(file) {
     } else if (ext === 'obj') {
       model = await loadOBJ(THREE, objectUrl, scene);
     } else {
-      // Fallback: shape genérico
       model = makeFallbackShape(THREE, scene);
     }
   } catch(e) {
@@ -223,7 +215,6 @@ async function startAdmin3dPreview(file) {
   URL.revokeObjectURL(objectUrl);
 
   if (model) {
-    // Centraliza e escala o modelo para caber na câmera
     const box = new THREE.Box3().setFromObject(model);
     const center = box.getCenter(new THREE.Vector3());
     const size   = box.getSize(new THREE.Vector3());
@@ -245,16 +236,15 @@ async function startAdmin3dPreview(file) {
 
 /* ── Loaders ── */
 async function load3MF(THREE, url, scene) {
-  // 3MFLoader não está no CDN do r128 — fazemos parse manual do ZIP/XML
-  // Estratégia: baixar o .3mf (que é um ZIP), extrair model.xml e parsear geometria
   try {
     const { unzipSync, strFromU8 } = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
     const resp = await fetch(url);
     const buf  = await resp.arrayBuffer();
     const files = unzipSync(new Uint8Array(buf));
 
-    // Procura o arquivo model dentro do 3mf
-    const modelKey = Object.keys(files).find(k => k.endsWith('.model') || k === '3D/3dmodel.model');
+    const modelKey = Object.keys(files).find(k =>
+      k.endsWith('.model') || k === '3D/3dmodel.model' || k.startsWith('3D/')
+    );
     if (!modelKey) throw new Error('3MF: arquivo model não encontrado');
 
     const xml = strFromU8(files[modelKey]);
@@ -268,31 +258,38 @@ async function load3MF(THREE, url, scene) {
 function parse3MFxml(THREE, xmlStr, scene) {
   const parser = new DOMParser();
   const doc    = parser.parseFromString(xmlStr, 'application/xml');
-  const vertices = [];
-  const indices  = [];
+  const allVerts = [];
+  const allIdx   = [];
 
-  doc.querySelectorAll('vertices vertex').forEach(v => {
-    vertices.push(parseFloat(v.getAttribute('x') || 0));
-    vertices.push(parseFloat(v.getAttribute('y') || 0));
-    vertices.push(parseFloat(v.getAttribute('z') || 0));
-  });
-  doc.querySelectorAll('triangles triangle').forEach(t => {
-    indices.push(parseInt(t.getAttribute('v1')));
-    indices.push(parseInt(t.getAttribute('v2')));
-    indices.push(parseInt(t.getAttribute('v3')));
+  let offset = 0;
+  doc.querySelectorAll('object').forEach(obj => {
+    const verts = [];
+    const tris  = [];
+    obj.querySelectorAll('vertices vertex').forEach(v => {
+      verts.push(parseFloat(v.getAttribute('x') || 0));
+      verts.push(parseFloat(v.getAttribute('y') || 0));
+      verts.push(parseFloat(v.getAttribute('z') || 0));
+    });
+    obj.querySelectorAll('triangles triangle').forEach(t => {
+      tris.push(parseInt(t.getAttribute('v1')) + offset);
+      tris.push(parseInt(t.getAttribute('v2')) + offset);
+      tris.push(parseInt(t.getAttribute('v3')) + offset);
+    });
+    allVerts.push(...verts);
+    allIdx.push(...tris);
+    offset += verts.length / 3;
   });
 
-  if (!vertices.length || !indices.length) return makeFallbackShape(THREE, scene);
+  if (!allVerts.length || !allIdx.length) return makeFallbackShape(THREE, scene);
 
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
-  geo.setIndex(indices);
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(allVerts), 3));
+  geo.setIndex(allIdx);
   geo.computeVertexNormals();
 
   const mat   = new THREE.MeshPhongMaterial({ color: 0xc9a6ff, shininess: 60, transparent: true, opacity: 0.92 });
   const mesh  = new THREE.Mesh(geo, mat);
 
-  // Wireframe overlay
   const wf = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({
     color: 0xc9a6ff, wireframe: true, transparent: true, opacity: 0.12
   }));
@@ -302,7 +299,6 @@ function parse3MFxml(THREE, xmlStr, scene) {
 }
 
 async function loadGLTF(THREE, url, scene) {
-  // GLTFLoader via CDN adicional
   const { GLTFLoader } = await import('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/GLTFLoader.js');
   return new Promise((resolve, reject) => {
     new GLTFLoader().load(url,
@@ -359,11 +355,9 @@ file3dInput?.addEventListener('change', () => {
   file3dNameEl.style.display = 'block';
   file3dZone.classList.add('has-file');
 
-  // Esconde badge de modelo existente ao trocar
   file3dExistingBadge.classList.remove('active');
   fModel3dUrl.value = '';
 
-  // Inicia preview 3D
   startAdmin3dPreview(file);
 });
 
@@ -529,7 +523,6 @@ async function boot() {
       if (selected3dFile) {
         if (!CLOUDINARY) throw new Error('Configuração Cloudinary ausente.');
         setStatus('Enviando modelo 3D…', '');
-        // Cloudinary aceita raw files com resource_type=raw
         model3dUrl = await uploadToCloudinary(selected3dFile, CLOUDINARY, 'raw', pct => {
           setStatus(`Enviando modelo 3D… ${pct}%`, '');
         });
@@ -706,13 +699,26 @@ function clearImagePreview() {
   uploadZone.classList.remove('has-preview');
 }
 
-/* ── UPLOAD CLOUDINARY (imagens e raw/3D) ──────────────────── */
+/* ── UPLOAD CLOUDINARY ─────────────────────────────────────── */
+/* v6.1 FIX: para arquivos raw (3D), inclui a extensão no public_id
+   para que a URL do Cloudinary preserve o formato (.3mf, .glb etc.)
+   e o loader no site principal possa detectar o tipo corretamente. */
 async function uploadToCloudinary(file, cloudinary, resourceType, onProgress) {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('upload_preset', cloudinary.uploadPreset);
 
-  // Para arquivos raw (3D), precisa de resource_type=raw
+  if (resourceType === 'raw') {
+    // Sanitiza o nome base e força extensão no public_id
+    const ext      = file.name.split('.').pop().toLowerCase();
+    const baseName = file.name
+      .replace(/\.[^.]+$/, '')
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .slice(0, 60); // limite seguro
+    const publicId = `3d_models/${baseName}_${Date.now()}.${ext}`;
+    formData.append('public_id', publicId);
+  }
+
   const endpoint = resourceType === 'raw'
     ? `https://api.cloudinary.com/v1_1/${cloudinary.cloudName}/raw/upload`
     : `https://api.cloudinary.com/v1_1/${cloudinary.cloudName}/image/upload`;
@@ -750,11 +756,9 @@ function openEdit(p) {
   extraPhotoFiles = [];
   renderExtraGrid();
 
-  // Modelo 3D existente
   clear3dFile();
   if (p.model3dUrl) {
     fModel3dUrl.value = p.model3dUrl;
-    // Extrai nome do arquivo da URL
     const urlParts = p.model3dUrl.split('/');
     const fileName = urlParts[urlParts.length - 1].split('?')[0];
     file3dExistingName.textContent = decodeURIComponent(fileName);
