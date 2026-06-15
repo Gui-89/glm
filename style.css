@@ -1703,3 +1703,20 @@ html, body {
 @media (max-width: 800px) {
   .admin-content { grid-template-columns: 1fr; }
 }
+
+/* Badge ⬡ 3D nos cards que possuem modelo 3D real */
+.card-badge-3d {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  font-size: 7.5px;
+  letter-spacing: 1px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 700;
+  z-index: 2;
+  background: rgba(130,80,255,.22);
+  color: #c9a6ff;
+  border: .5px solid rgba(201,166,255,.3);
+  pointer-events: none;
+}
