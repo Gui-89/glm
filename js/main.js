@@ -1,11 +1,8 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — main.js  (ES module)
-   v8.0 — novidades vs v7:
-   · Hover preview 3D carrega o modelo REAL do produto
-     (suporte a .3mf via parse manual, .glb/.gltf via GLTFLoader,
-      .obj via OBJLoader — fallback para shape genérico)
-   · Cache de modelos para evitar re-download no hover
-   · Restante do código mantido intacto
+   v8.1 — fix: detecção de extensão de modelo 3D robusta,
+   funciona com URLs do Cloudinary que incluem extensão
+   em qualquer posição do path (ex: /3d_models/arquivo.3mf)
    ═══════════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════════
@@ -431,10 +428,8 @@ async function pdStart3d(modelUrl) {
 
   const col = currentTheme === 'creative' ? 0xc9a6ff : 0x5eca8a;
 
-  // Tenta carregar modelo real
   _pd3dMesh = await loadModelForViewer(THREE, modelUrl, _pd3dScene, col);
 
-  // Ajusta câmera ao tamanho do modelo
   if (_pd3dMesh) {
     const box    = new THREE.Box3().setFromObject(_pd3dMesh);
     const center = box.getCenter(new THREE.Vector3());
@@ -670,20 +665,32 @@ function initCanvasHero() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   CARREGADOR DE MODELOS 3D — compartilhado entre preview e modal
+   CARREGADOR DE MODELOS 3D
+   v8.1 FIX: detecção de extensão robusta via regex —
+   funciona com URLs do Cloudinary onde a extensão aparece
+   no meio do path (ex: /3d_models/Vase_1234567890.3mf)
    ══════════════════════════════════════════════════════════ */
 
-// Cache de modelos já carregados (URL → { geometry/scene data })
 const _modelCache = new Map();
 
 /**
- * Carrega qualquer formato 3D suportado e adiciona à scene.
- * Retorna o Object3D raiz do modelo (ou shape genérico em caso de erro).
+ * Detecta a extensão do modelo 3D a partir da URL.
+ * Usa regex para encontrar .3mf/.glb/.gltf/.obj em qualquer
+ * parte do path, ignorando query strings.
  */
-async function loadModelForViewer(THREE, url, scene, color = 0x5eca8a) {
-  const ext = url.split('?')[0].split('.').pop().toLowerCase();
+function getModel3dExtension(url) {
+  const clean = url.split('?')[0]; // remove query string
+  // Procura extensão 3D em qualquer posição do path
+  const match = clean.match(/\.(3mf|glb|gltf|obj)(?:[^a-zA-Z0-9]|$)/i);
+  if (match) return match[1].toLowerCase();
+  // Fallback: última extensão do path
+  return clean.split('/').pop().split('.').pop().toLowerCase();
+}
 
-  // Cache HIT — clona a geometria sem re-download
+async function loadModelForViewer(THREE, url, scene, color = 0x5eca8a) {
+  // v8.1: usa detecção robusta em vez de split simples
+  const ext = getModel3dExtension(url);
+
   if (_modelCache.has(url)) {
     const cached = _modelCache.get(url);
     if (cached && cached.clone) {
@@ -703,9 +710,9 @@ async function loadModelForViewer(THREE, url, scene, color = 0x5eca8a) {
     } else if (ext === 'obj') {
       model = await fetchOBJModel(THREE, url, scene, color);
     } else {
+      console.warn(`[3D] Extensão não reconhecida na URL: "${url}" (detectado: "${ext}") — usando shape genérico`);
       model = makeGenericShape(THREE, scene, color);
     }
-    // Armazena no cache
     _modelCache.set(url, model);
     return model;
   } catch(e) {
@@ -716,14 +723,12 @@ async function loadModelForViewer(THREE, url, scene, color = 0x5eca8a) {
 
 async function fetch3MFModel(THREE, url, scene, color) {
   try {
-    // fflate para descomprimir o ZIP do .3mf
     const { unzipSync, strFromU8 } = await import('https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js');
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const buf  = await resp.arrayBuffer();
     const zipped = unzipSync(new Uint8Array(buf));
 
-    // Arquivo model pode estar em diferentes locais dentro do .3mf
     const modelKey = Object.keys(zipped).find(k =>
       k.endsWith('.model') || k === '3D/3dmodel.model' || k.startsWith('3D/')
     );
@@ -743,7 +748,6 @@ function parse3MFGeometry(THREE, xmlStr, scene, color) {
   const allVerts = [];
   const allIdx   = [];
 
-  // Pode ter vários objetos/meshes no .3mf — agrupamos tudo
   let offset = 0;
   doc.querySelectorAll('object').forEach(obj => {
     const verts = [];
@@ -778,7 +782,6 @@ function parse3MFGeometry(THREE, xmlStr, scene, color) {
   });
   const mesh = new THREE.Mesh(geo, mat);
 
-  // Wireframe suave por cima
   const wf = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({
     color, wireframe: true, transparent: true, opacity: 0.10
   }));
@@ -794,7 +797,6 @@ async function fetchGLTFModel(THREE, url, scene, color) {
   return new Promise((resolve, reject) => {
     new GLTFLoader().load(url,
       gltf => {
-        // Aplica cor ao material de todas as meshes
         gltf.scene.traverse(child => {
           if (child.isMesh) {
             child.material = new THREE.MeshPhongMaterial({
@@ -872,7 +874,6 @@ function recolorModel(model, THREE, color) {
 
 /* ══════════════════════════════════════════════════════════
    THREE.JS PREVIEW — hover nos cards
-   Modificado v8: carrega modelo real se prod.model3dUrl existir
    ══════════════════════════════════════════════════════════ */
 const PREV_COLORS = { decor: 0x5eca8a, creative: 0xc9a6ff };
 
@@ -894,7 +895,6 @@ async function initThreePreview() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0x000000, 0);
 
-  // Cena compartilhada — limpa a cada produto exibido
   let scene  = new THREE.Scene();
   let camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
   camera.position.set(0, 0, 3.2);
@@ -911,10 +911,9 @@ async function initThreePreview() {
   let raf       = null;
   let visible   = false;
   let pTheme    = 'decor';
-  let loadingUrl = null;   // evita corrida de carregamento
+  let loadingUrl = null;
 
   function clearScene() {
-    // Remove objetos anteriores (exceto luzes)
     const toRemove = [];
     scene.traverse(obj => {
       if (!obj.isLight && obj !== scene) toRemove.push(obj);
@@ -959,15 +958,13 @@ async function initThreePreview() {
     wrap.style.top  = t + 'px';
   }
 
-  // Exibe preview — carrega modelo real se disponível
   async function show(x, y, prod) {
     pos(x, y);
     wrap.style.display = 'block';
 
-    const color   = PREV_COLORS[pTheme];
+    const color    = PREV_COLORS[pTheme];
     const modelUrl = prod?.model3dUrl || null;
 
-    // Se já está mostrando o mesmo modelo, apenas anima
     if (loadingUrl === modelUrl && mesh) {
       if (!visible) { visible = true; loop(); }
       return;
@@ -980,12 +977,10 @@ async function initThreePreview() {
     if (!visible) { visible = true; loop(); }
 
     if (modelUrl) {
-      // Carrega modelo real (com cache)
       mesh = await loadModelForViewer(THREE, modelUrl, scene, color);
-      if (loadingUrl !== modelUrl) return; // outra chamada aconteceu entre essa
+      if (loadingUrl !== modelUrl) return;
       normalizeModel(mesh);
     } else {
-      // Shape genérico quando não há modelo 3D
       mesh = makeGenericShape(THREE, scene, color);
     }
   }
@@ -1023,7 +1018,6 @@ function makeCard(prod, idx) {
     ? `<img src="${prod.imageUrl}" alt="${prod.name}" loading="lazy">`
     : `<span class="emoji-fallback">${prod.emoji || '📦'}</span>`;
   const badge = prod.badge ? `<span class="${T.badge}">${prod.badge}</span>` : '';
-  // Badge 3D no card quando produto tem modelo
   const badge3d = prod.model3dUrl
     ? `<span class="card-badge-3d">⬡ 3D</span>`
     : '';
@@ -1053,7 +1047,6 @@ function makeCard(prod, idx) {
 
   let ht;
   card.addEventListener('mouseenter', e => {
-    // Passa o produto inteiro (com model3dUrl) para o preview
     ht = setTimeout(() => window._preview?.show(e.clientX, e.clientY, prod), 200);
   });
   card.addEventListener('mousemove',  e => window._preview?.move(e.clientX, e.clientY));
