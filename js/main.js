@@ -1,10 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — main.js  (ES module)
-   v6.2 — fix:
-   · firebase-config.js agora está em /js/ — path corrigido
-   · botão "−" do carrinho: ao chegar em qty=1 remove o item
-     em vez de travar (usuário consegue esvaziar o carrinho)
-   · localStorage limpo corretamente ao remover items
+   v7.0 — novidades:
+   · Modal de detalhe do produto (pd-overlay) com galeria multi-foto
+   · Fotos extras (extraPhotos[]) suportadas
+   · Campo model3dUrl para preview 3D no modal
+   · Fix: foto não cortada (object-fit: contain)
    ═══════════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════════
@@ -73,7 +73,7 @@ function applyTheme(t) {
 
   const dot  = document.getElementById('live-dot');
   const ltxt = document.getElementById('live-text');
-  if (dot)  dot.className   = T.dot;
+  if (dot)  dot.className    = T.dot;
   if (ltxt) ltxt.textContent = T.liveText;
 
   // Vídeo hero — troca de fonte conforme o tema
@@ -167,20 +167,11 @@ function removeFromCart(key) {
   updateCartFab();
 }
 
-/* FIX v6.2: ao decrementar até 1 e clicar "−" novamente, remove o item
-   em vez de travar em qty=1. Isso libera o usuário de ficar preso. */
 function changeQty(key, delta) {
   const idx = cart.findIndex(i => i.key === key);
   if (idx < 0) return;
-
   const newQty = cart[idx].qty + delta;
-
-  if (newQty <= 0) {
-    // Remove o item quando qty chegaria a zero
-    removeFromCart(key);
-    return;
-  }
-
+  if (newQty <= 0) { removeFromCart(key); return; }
   cart[idx].qty = newQty;
   saveCart();
   renderCart();
@@ -263,7 +254,7 @@ function closeCart() {
 /* ══════════════════════════════════════════════════════════
    CHECKOUT — overlay (sem redirect)
    ══════════════════════════════════════════════════════════ */
-let selectedPayment = 'pix';
+let selectedPayment  = 'pix';
 let selectedDelivery = 'retirada';
 
 function openCheckout() {
@@ -307,8 +298,8 @@ function sendOrder() {
   const lines = cart.map(i =>
     `• ${i.qty}x ${i.name}${i.variant ? ` (${i.variant})` : ''} — ${fmtBRL(i.price * i.qty)}`
   );
-  const total = fmtBRL(cartTotal());
-  const entrega = selectedDelivery === 'entrega'
+  const total    = fmtBRL(cartTotal());
+  const entrega  = selectedDelivery === 'entrega'
     ? `🚚 Entrega em: ${address}`
     : '🏪 Retirada (combinar local)';
   const pagamento = { pix:'💠 PIX', cartao:'💳 Cartão', dinheiro:'💵 Dinheiro' }[selectedPayment] || '';
@@ -405,6 +396,314 @@ function openVariantModal(prod) {
   ov.style.display = 'flex';
   requestAnimationFrame(() => ov.classList.add('open'));
 }
+
+/* ══════════════════════════════════════════════════════════
+   PRODUCT DETAIL MODAL
+   ══════════════════════════════════════════════════════════ */
+let _pdProd        = null;   // produto atual no modal
+let _pdImgIndex    = 0;      // foto atual na galeria
+let _pdImgs        = [];     // array de URLs de fotos
+let _pd3dRaf       = null;   // requestAnimationFrame do viewer 3D
+let _pd3dRenderer  = null;   // THREE.WebGLRenderer
+let _pd3dScene     = null;
+let _pd3dCamera    = null;
+let _pd3dMesh      = null;
+let _pd3dActive    = false;
+
+function buildPdImages(prod) {
+  const imgs = [];
+  if (prod.imageUrl) imgs.push(prod.imageUrl);
+  if (Array.isArray(prod.extraPhotos)) {
+    prod.extraPhotos.forEach(u => { if (u && !imgs.includes(u)) imgs.push(u); });
+  }
+  return imgs;
+}
+
+function pdSetImage(idx) {
+  _pdImgIndex = idx;
+  const mainEl = document.getElementById('pd-main-img');
+  const emojiEl = document.getElementById('pd-main-emoji');
+
+  if (_pdImgs.length) {
+    if (mainEl) { mainEl.src = _pdImgs[idx]; mainEl.style.display = 'block'; }
+    if (emojiEl) emojiEl.style.display = 'none';
+  } else {
+    if (mainEl) mainEl.style.display = 'none';
+    if (emojiEl) { emojiEl.textContent = _pdProd?.emoji || '📦'; emojiEl.style.display = 'flex'; }
+  }
+
+  // thumbs
+  document.querySelectorAll('.pd-thumb').forEach((t, i) => {
+    t.classList.toggle('active', i === idx);
+  });
+
+  // nav buttons
+  const prev = document.getElementById('pd-nav-prev');
+  const next = document.getElementById('pd-nav-next');
+  if (prev) prev.disabled = idx === 0;
+  if (next) next.disabled = idx === _pdImgs.length - 1;
+}
+
+function pdStop3d() {
+  if (_pd3dRaf) { cancelAnimationFrame(_pd3dRaf); _pd3dRaf = null; }
+  _pd3dActive = false;
+  const viewer = document.getElementById('pd-3d-viewer');
+  if (viewer) viewer.classList.remove('active');
+  const mainZone = document.getElementById('pd-gallery-main');
+  if (mainZone) mainZone.style.display = '';
+}
+
+async function pdStart3d(modelUrl) {
+  // Se for uma URL de preview (glb/obj) carrega Three.js e exibe
+  // Por ora: exibe o canvas 3D animado (shape genérico) como preview
+  // quando tivermos o GLBLoader podemos trocar aqui
+  const viewer  = document.getElementById('pd-3d-viewer');
+  const canvas  = document.getElementById('pd-3d-canvas');
+  const mainZone = document.getElementById('pd-gallery-main');
+  if (!viewer || !canvas) return;
+
+  mainZone.style.display = 'none';
+  viewer.classList.add('active');
+  _pd3dActive = true;
+
+  // Se já temos renderer, só reativa
+  if (_pd3dRenderer) {
+    function loop3d() {
+      if (!_pd3dActive) return;
+      _pd3dMesh && (_pd3dMesh.rotation.x += 0.012, _pd3dMesh.rotation.y += 0.018);
+      _pd3dRenderer.render(_pd3dScene, _pd3dCamera);
+      _pd3dRaf = requestAnimationFrame(loop3d);
+    }
+    loop3d();
+    return;
+  }
+
+  let THREE;
+  try { THREE = await import('three'); } catch(e) {
+    viewer.classList.remove('active');
+    mainZone.style.display = '';
+    return;
+  }
+
+  _pd3dRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  _pd3dRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  _pd3dRenderer.setClearColor(0x000000, 0);
+
+  const w = viewer.clientWidth || 400;
+  const h = viewer.clientHeight || 300;
+  _pd3dRenderer.setSize(w, h);
+
+  _pd3dScene  = new THREE.Scene();
+  _pd3dCamera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
+  _pd3dCamera.position.set(0, 0, 3.2);
+
+  _pd3dScene.add(new THREE.AmbientLight(0xffffff, 0.4));
+  const pl = new THREE.PointLight(0xffffff, 1.2, 10);
+  pl.position.set(2, 3, 3);
+  _pd3dScene.add(pl);
+
+  const SHAPES = [
+    new THREE.BoxGeometry(1.2, 1.2, 1.2),
+    new THREE.IcosahedronGeometry(0.85, 0),
+    new THREE.OctahedronGeometry(1, 0),
+    new THREE.TorusGeometry(0.7, 0.28, 16, 40),
+  ];
+
+  const col = currentTheme === 'creative' ? 0xc9a6ff : 0x5eca8a;
+  const geo = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+  _pd3dMesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+    color: col, emissive: col, emissiveIntensity: 0.15,
+    shininess: 80, transparent: true, opacity: 0.92
+  }));
+  _pd3dScene.add(_pd3dMesh);
+
+  const wf = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({
+    color: col, wireframe: true, transparent: true, opacity: 0.2
+  }));
+  wf.scale.setScalar(1.005);
+  _pd3dMesh.add(wf);
+
+  function loop3d() {
+    if (!_pd3dActive) return;
+    _pd3dMesh.rotation.x += 0.012;
+    _pd3dMesh.rotation.y += 0.018;
+    _pd3dRenderer.render(_pd3dScene, _pd3dCamera);
+    _pd3dRaf = requestAnimationFrame(loop3d);
+  }
+  loop3d();
+}
+
+function openProductDetail(prod) {
+  _pdProd     = prod;
+  _pdImgIndex = 0;
+  _pdImgs     = buildPdImages(prod);
+
+  const ov = document.getElementById('pd-overlay');
+  if (!ov) return;
+
+  // Stop qualquer 3D anterior
+  pdStop3d();
+
+  // Preenche nome, preço, badge, descrição
+  const nameEl = document.getElementById('pd-name');
+  const priceEl = document.getElementById('pd-price');
+  const badgeEl = document.getElementById('pd-badge-tag');
+  const descEl  = document.getElementById('pd-description');
+  const catLabel = document.getElementById('pd-category-label');
+
+  if (nameEl)  nameEl.textContent  = prod.name || '';
+  if (priceEl) priceEl.textContent = fmtBRL(prod.price ?? 0);
+  if (descEl)  descEl.textContent  = prod.description || '';
+
+  const isCreative = prod.category === 'creative';
+  if (badgeEl) {
+    if (prod.badge) {
+      badgeEl.textContent = prod.badge;
+      badgeEl.className = `pd-badge-tag ${isCreative ? 'pd-badge-creative' : 'pd-badge-decor'}`;
+      badgeEl.style.display = '';
+    } else {
+      badgeEl.style.display = 'none';
+    }
+  }
+  if (catLabel) {
+    catLabel.textContent = isCreative ? '✦ 3D Creative' : '🌿 Essência Decor';
+  }
+
+  // Galeria — monta thumbs
+  const thumbsEl = document.getElementById('pd-thumbs');
+  if (thumbsEl) {
+    thumbsEl.innerHTML = '';
+    if (_pdImgs.length > 1) {
+      _pdImgs.forEach((url, i) => {
+        const t = document.createElement('div');
+        t.className = 'pd-thumb' + (i === 0 ? ' active' : '');
+        t.innerHTML = `<img src="${url}" alt="foto ${i+1}" loading="lazy">`;
+        t.addEventListener('click', () => pdSetImage(i));
+        thumbsEl.appendChild(t);
+      });
+      thumbsEl.style.display = 'flex';
+    } else {
+      thumbsEl.style.display = 'none';
+    }
+  }
+
+  // Botão 3D
+  const badge3d = document.getElementById('pd-3d-badge');
+  if (badge3d) {
+    if (prod.model3dUrl) {
+      badge3d.classList.add('visible');
+      badge3d.onclick = () => {
+        if (_pd3dActive) { pdStop3d(); pdSetImage(_pdImgIndex); }
+        else pdStart3d(prod.model3dUrl);
+      };
+    } else {
+      badge3d.classList.remove('visible');
+    }
+  }
+
+  // Variantes no modal de detalhe
+  const varsEl = document.getElementById('pd-variants-container');
+  if (varsEl) {
+    varsEl.innerHTML = '';
+    const vars = prod.variations || [];
+    if (vars.length) {
+      const byType = {};
+      vars.forEach(v => { if (!byType[v.type]) byType[v.type] = []; byType[v.type].push(v); });
+      let pdSelected = {};
+
+      Object.entries(byType).forEach(([type, variants]) => {
+        const group = document.createElement('div');
+        group.className = 'pd-variant-group';
+        group.innerHTML = `<div class="pd-variant-group-label">${type.toUpperCase()}</div>`;
+        const pills = document.createElement('div');
+        pills.className = 'pd-variant-pills';
+        variants.forEach(v => {
+          const btn = document.createElement('button');
+          btn.className = 'pd-variant-pill';
+          btn.type = 'button';
+          btn.textContent = v.label + (v.price ? ` (+${fmtBRL(v.price - (prod.price || 0))})` : '');
+          btn.addEventListener('click', () => {
+            pills.querySelectorAll('.pd-variant-pill').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            pdSelected[type] = v;
+            const prices = Object.values(pdSelected).map(s => s.price).filter(Boolean);
+            const shown  = prices.length ? Math.max(...prices) : (prod.price ?? 0);
+            if (priceEl) priceEl.textContent = fmtBRL(shown);
+          });
+          pills.appendChild(btn);
+        });
+        group.appendChild(pills);
+        varsEl.appendChild(group);
+      });
+
+      // Botão adicionar usa variante selecionada
+      const addBtn = document.getElementById('pd-add-btn');
+      if (addBtn) {
+        addBtn.onclick = () => {
+          const label  = Object.values(pdSelected).map(s => s.label).join(' / ') || null;
+          const prices = Object.values(pdSelected).map(s => s.price).filter(Boolean);
+          const price  = prices.length ? Math.max(...prices) : (prod.price ?? 0);
+          addToCart(prod, label, price);
+          closeProductDetail();
+        };
+      }
+    } else {
+      // Sem variantes — botão direto
+      const addBtn = document.getElementById('pd-add-btn');
+      if (addBtn) addBtn.onclick = () => { addToCart(prod); closeProductDetail(); };
+    }
+
+    // Estilo do botão conforme tema
+    const addBtn = document.getElementById('pd-add-btn');
+    if (addBtn) {
+      addBtn.className = isCreative ? 'pd-add-btn creative-btn' : 'pd-add-btn';
+    }
+  }
+
+  // Seta imagem inicial
+  pdSetImage(0);
+
+  // Abre overlay
+  ov.style.display = 'flex';
+  requestAnimationFrame(() => ov.classList.add('open'));
+  document.body.style.overflow = 'hidden';
+}
+
+function closeProductDetail() {
+  const ov = document.getElementById('pd-overlay');
+  if (!ov) return;
+  pdStop3d();
+  ov.classList.remove('open');
+  setTimeout(() => { ov.style.display = 'none'; }, 400);
+  document.body.style.overflow = '';
+}
+
+// Nav galeria
+document.getElementById('pd-nav-prev')?.addEventListener('click', () => {
+  if (_pdImgIndex > 0) pdSetImage(_pdImgIndex - 1);
+});
+document.getElementById('pd-nav-next')?.addEventListener('click', () => {
+  if (_pdImgIndex < _pdImgs.length - 1) pdSetImage(_pdImgIndex + 1);
+});
+
+// Fechar modal
+document.getElementById('pd-close')?.addEventListener('click', closeProductDetail);
+document.getElementById('pd-overlay')?.addEventListener('click', e => {
+  if (e.target === document.getElementById('pd-overlay')) closeProductDetail();
+});
+
+// Swipe no modal (mobile)
+let _pdTouchX = 0;
+document.getElementById('pd-gallery-main')?.addEventListener('touchstart', e => {
+  _pdTouchX = e.touches[0].clientX;
+}, { passive: true });
+document.getElementById('pd-gallery-main')?.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - _pdTouchX;
+  if (Math.abs(dx) > 40) {
+    if (dx < 0 && _pdImgIndex < _pdImgs.length - 1) pdSetImage(_pdImgIndex + 1);
+    if (dx > 0 && _pdImgIndex > 0) pdSetImage(_pdImgIndex - 1);
+  }
+}, { passive: true });
 
 /* ══════════════════════════════════════════════════════════
    CANVAS HERO — rede de partículas
@@ -591,7 +890,7 @@ function makeCard(prod, idx) {
     : `<span class="emoji-fallback">${prod.emoji || '📦'}</span>`;
   const badge = prod.badge ? `<span class="${T.badge}">${prod.badge}</span>` : '';
 
-  const hasVars = prod.variations?.length > 0;
+  const hasVars  = prod.variations?.length > 0;
   const btnLabel = hasVars ? '+ VER OPÇÕES' : '+ ADICIONAR';
 
   card.innerHTML = `
@@ -602,6 +901,12 @@ function makeCard(prod, idx) {
       ${prod.description ? `<div class="card-desc">${prod.description}</div>` : ''}
     </div>
     <button type="button" class="card-add-btn">${btnLabel}</button>`;
+
+  // Clique no card (exceto no botão) → abre detalhe
+  card.addEventListener('click', e => {
+    if (e.target.classList.contains('card-add-btn')) return;
+    openProductDetail(prod);
+  });
 
   card.querySelector('.card-add-btn').addEventListener('click', e => {
     e.stopPropagation();
@@ -650,7 +955,6 @@ function renderGrid(products) {
 
 /* ══════════════════════════════════════════════════════════
    FIRESTORE — carregado dinamicamente, com fallback DEMO
-   FIX v6.2: firebase-config.js agora está em /js/
    ══════════════════════════════════════════════════════════ */
 const DEMO = [
   { id:'1', name:'Quadro Minimalista', price:189, badge:'NOVO', emoji:'🖼️', description:'Arte exclusiva para sua sala',     category:'decor'    },
@@ -673,7 +977,7 @@ async function initFirebase() {
     const [{ initializeApp }, { getFirestore }, { FIREBASE_CONFIG }] = await Promise.all([
       import('firebase/app'),
       import('firebase/firestore'),
-      import('./firebase-config.js'),   // ← CORRIGIDO: estava './firebase-config.js'
+      import('./firebase-config.js'),
     ]);
     const app = initializeApp(FIREBASE_CONFIG);
     db = getFirestore(app);
