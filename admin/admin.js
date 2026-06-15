@@ -1,11 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — admin.js  (ES module)
-   FIX v4:
-   · firebase-config.js agora está em /js/ — path atualizado
-   · boot() carrega firebase SEQUENCIALMENTE antes de bindar o botão
-   · signInWithPopup chamado direto no click handler (sem await prévio)
-   · modal usa classList.add/remove('open')
-   · view-login usa classList.add/remove('hidden') + display:none no CSS
+   v5 — correções:
+   · Fotos extras: btn-add-extra-photo abre file picker e sobe para Cloudinary
+   · extraPhotos[] salvo/carregado no Firestore
+   · openEdit carrega extraPhotos existentes
+   · resetForm limpa extraPhotos
    ═══════════════════════════════════════════════════════════ */
 
 /* ── DOM REFS ──────────────────────────────────────────────── */
@@ -29,6 +28,7 @@ const fEmoji      = $('f-emoji');
 const fDesc       = $('f-desc');
 const fEditId     = $('f-edit-id');
 const fEditImgUrl = $('f-edit-img-url');
+const fExtraPhotos = $('f-extra-photos');
 const btnSave     = $('btn-save');
 const btnCancel   = $('btn-cancel-edit');
 const formStatus  = $('form-status');
@@ -46,6 +46,10 @@ const modalConfirm    = $('modal-confirm');
 const btnGoogleLogin  = $('btn-google-login');
 const btnLogout       = $('btn-logout');
 
+const extraPhotosGrid   = $('extra-photos-grid');
+const btnAddExtraPhoto  = $('btn-add-extra-photo');
+const extraFileInput    = $('extra-file-input');
+
 /* ── STATE ─────────────────────────────────────────────────── */
 let allProducts     = [];
 let filterCat       = 'all';
@@ -53,6 +57,8 @@ let searchQuery     = '';
 let pendingDeleteId = null;
 let unsubProducts   = null;
 let selectedFile    = null;
+let extraPhotoFiles = [];   // File[] — novas fotos extras a subir
+let extraPhotoUrls  = [];   // string[] — URLs já salvas (edição)
 
 /* ── HELPERS ───────────────────────────────────────────────── */
 function setStatus(msg, type) {
@@ -84,14 +90,64 @@ function showPanel() {
   adminNav.style.display = '';
 }
 
+/* ── FOTOS EXTRAS ──────────────────────────────────────────── */
+function renderExtraGrid() {
+  // mantém apenas o botão "+"
+  while (extraPhotosGrid.firstChild && extraPhotosGrid.firstChild !== btnAddExtraPhoto) {
+    extraPhotosGrid.removeChild(extraPhotosGrid.firstChild);
+  }
+
+  // URLs já salvas
+  extraPhotoUrls.forEach((url, i) => {
+    const thumb = document.createElement('div');
+    thumb.className = 'extra-photo-thumb';
+    thumb.innerHTML = `
+      <img src="${url}" alt="extra ${i+1}" loading="lazy"/>
+      <button class="extra-photo-remove" type="button" data-url="${url}" title="Remover">✕</button>`;
+    thumb.querySelector('.extra-photo-remove').addEventListener('click', () => {
+      extraPhotoUrls = extraPhotoUrls.filter(u => u !== url);
+      renderExtraGrid();
+    });
+    extraPhotosGrid.insertBefore(thumb, btnAddExtraPhoto);
+  });
+
+  // Arquivos novos (preview local)
+  extraPhotoFiles.forEach((file, i) => {
+    const objUrl = URL.createObjectURL(file);
+    const thumb = document.createElement('div');
+    thumb.className = 'extra-photo-thumb';
+    thumb.style.position = 'relative';
+    thumb.innerHTML = `
+      <img src="${objUrl}" alt="novo ${i+1}"/>
+      <button class="extra-photo-remove" type="button" data-idx="${i}" title="Remover">✕</button>`;
+    thumb.querySelector('.extra-photo-remove').addEventListener('click', () => {
+      extraPhotoFiles.splice(i, 1);
+      renderExtraGrid();
+    });
+    extraPhotosGrid.insertBefore(thumb, btnAddExtraPhoto);
+  });
+}
+
+/* Abre seletor de arquivos ao clicar no "+" */
+btnAddExtraPhoto?.addEventListener('click', () => {
+  extraFileInput.value = '';
+  extraFileInput.click();
+});
+
+extraFileInput?.addEventListener('change', () => {
+  const files = Array.from(extraFileInput.files || []);
+  const valid = files.filter(f => {
+    if (!f.type.startsWith('image/')) { showToast('Arquivo inválido: ' + f.name, 'err'); return false; }
+    if (f.size > 10 * 1024 * 1024)   { showToast('Imagem muito grande (máx 10MB): ' + f.name, 'err'); return false; }
+    return true;
+  });
+  extraPhotoFiles = [...extraPhotoFiles, ...valid];
+  renderExtraGrid();
+});
+
 /* ── BOOT ──────────────────────────────────────────────────── */
 async function boot() {
 
-  /* 1. Importa tudo antes de qualquer interação
-     ATENÇÃO: firebase-config.js agora está em /js/ (mesmo diretório
-     que admin.js quando servido via /admin/), então o path relativo
-     correto é '../js/firebase-config.js'
-  */
   let firebaseApp, firestoreMod, authMod, config;
 
   try {
@@ -99,7 +155,7 @@ async function boot() {
       import('firebase/app'),
       import('firebase/firestore'),
       import('firebase/auth'),
-      import('../js/firebase-config.js'),   // ← CORRIGIDO: estava '../firebase-config.js'
+      import('../js/firebase-config.js'),
     ]);
   } catch (err) {
     console.error('[boot] Falha ao importar módulos:', err);
@@ -117,7 +173,6 @@ async function boot() {
   const { FIREBASE_CONFIG, ALLOWED_EMAILS = [],
           CLOUDINARY = null }                          = config;
 
-  /* 2. Inicializa Firebase */
   let app, db, auth;
   try {
     app  = initializeApp(FIREBASE_CONFIG);
@@ -130,12 +185,6 @@ async function boot() {
   }
 
   /* ── AUTH: botão Google ─────────────────────────────────── */
-  /*
-     IMPORTANTE: o handler é síncrono até a chamada do signInWithPopup.
-     Qualquer await ANTES de signInWithPopup faz o navegador perder o
-     "gesto do usuário" e bloqueia o popup. Por isso todos os imports
-     ficam no boot() acima, e o handler apenas chama a função.
-  */
   btnGoogleLogin?.addEventListener('click', () => {
     loginError.textContent  = '';
     btnGoogleLogin.disabled = true;
@@ -150,7 +199,6 @@ async function boot() {
             loginError.textContent = `❌ ${email} não tem permissão de acesso.`;
           });
         }
-        // onAuthStateChanged cuida do resto
       })
       .catch(err => {
         console.error('[login]', err.code, err.message);
@@ -188,7 +236,7 @@ async function boot() {
       if (unsubProducts) { unsubProducts(); unsubProducts = null; }
       allProducts = [];
       renderList();
-      if (user) signOut(auth);   // desconecta e-mail não autorizado
+      if (user) signOut(auth);
     }
   });
 
@@ -220,12 +268,24 @@ async function boot() {
     try {
       let imageUrl = fEditImgUrl.value || '';
 
+      // Upload foto principal
       if (selectedFile) {
         if (!CLOUDINARY) throw new Error('Configuração Cloudinary ausente no firebase-config.js');
-        setStatus('Enviando imagem… 0%', '');
+        setStatus('Enviando foto principal… 0%', '');
         imageUrl = await uploadToCloudinary(selectedFile, CLOUDINARY, pct => {
-          setStatus(`Enviando imagem… ${pct}%`, '');
+          setStatus(`Enviando foto principal… ${pct}%`, '');
         });
+      }
+
+      // Upload fotos extras
+      let finalExtraUrls = [...extraPhotoUrls];
+      if (extraPhotoFiles.length) {
+        if (!CLOUDINARY) throw new Error('Configuração Cloudinary ausente no firebase-config.js');
+        for (let i = 0; i < extraPhotoFiles.length; i++) {
+          setStatus(`Enviando foto extra ${i+1}/${extraPhotoFiles.length}…`, '');
+          const url = await uploadToCloudinary(extraPhotoFiles[i], CLOUDINARY, null);
+          finalExtraUrls.push(url);
+        }
       }
 
       const data = {
@@ -236,6 +296,7 @@ async function boot() {
         description: fDesc.value.trim()  || null,
         category:    cat,
         imageUrl:    imageUrl || null,
+        extraPhotos: finalExtraUrls,
       };
 
       const editId = fEditId.value;
@@ -305,6 +366,9 @@ function renderList() {
     const price = p.price != null
       ? 'R$ ' + Number(p.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
       : '—';
+    const extraCount = Array.isArray(p.extraPhotos) && p.extraPhotos.length
+      ? `<span style="font-size:8.5px;opacity:.35">+${p.extraPhotos.length} foto${p.extraPhotos.length>1?'s':''}</span>`
+      : '';
 
     item.innerHTML = `
       <div class="product-thumb">${thumbInner}</div>
@@ -313,6 +377,7 @@ function renderList() {
         <div class="product-meta">
           <span class="product-price">${price}</span>
           <span class="product-cat">${catLabel}</span>
+          ${extraCount}
           ${p.badge ? `<span style="font-size:8.5px;opacity:.4;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px">${p.badge}</span>` : ''}
         </div>
       </div>
@@ -342,7 +407,7 @@ searchInput?.addEventListener('input', () => {
   renderList();
 });
 
-/* ── UPLOAD IMAGEM ─────────────────────────────────────────── */
+/* ── UPLOAD IMAGEM PRINCIPAL ───────────────────────────────── */
 uploadZone?.addEventListener('click', e => {
   if (e.target === btnClearImg) return;
   fileInput.click();
@@ -426,6 +491,11 @@ function openEdit(p) {
   fEmoji.value      = p.emoji || '';
   fDesc.value       = p.description || '';
 
+  // Fotos extras existentes
+  extraPhotoUrls  = Array.isArray(p.extraPhotos) ? [...p.extraPhotos] : [];
+  extraPhotoFiles = [];
+  renderExtraGrid();
+
   const catInput = document.querySelector(`input[name="cat"][value="${p.category || 'decor'}"]`);
   if (catInput) catInput.checked = true;
 
@@ -454,6 +524,10 @@ function resetForm() {
   const decor = document.querySelector('input[name="cat"][value="decor"]');
   if (decor) decor.checked = true;
   clearImagePreview();
+  // limpa fotos extras
+  extraPhotoUrls  = [];
+  extraPhotoFiles = [];
+  renderExtraGrid();
   formTitle.textContent   = 'ADICIONAR PRODUTO';
   btnSave.textContent     = 'SALVAR PRODUTO';
   btnCancel.style.display = 'none';
@@ -472,7 +546,6 @@ modalCancel?.addEventListener('click', () => {
   pendingDeleteId = null;
 });
 
-/* fecha modal ao clicar fora da caixa */
 modalDelete?.addEventListener('click', e => {
   if (e.target === modalDelete) {
     modalDelete.classList.remove('open');
