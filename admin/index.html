@@ -318,6 +318,128 @@ html, body {
 }
 #extra-file-input { display: none; }
 
+/* ── UPLOAD 3MF ──────────────────────────── */
+.file3d-section {
+  margin-bottom: 18px;
+}
+.file3d-label {
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: rgba(255,255,255,.38);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  display: block;
+}
+.file3d-upload-zone {
+  border: 1px dashed rgba(201,166,255,.25);
+  border-radius: 10px;
+  padding: 18px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .25s;
+  position: relative;
+  background: rgba(130,80,255,.03);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 80px;
+}
+.file3d-upload-zone:hover {
+  border-color: rgba(201,166,255,.55);
+  background: rgba(130,80,255,.07);
+}
+.file3d-upload-zone.has-file {
+  border-style: solid;
+  border-color: rgba(201,166,255,.45);
+  background: rgba(130,80,255,.06);
+}
+.file3d-upload-zone input[type="file"] { display: none; }
+.file3d-icon { font-size: 24px; line-height: 1; }
+.file3d-text { font-size: 10px; opacity: .5; letter-spacing: .3px; }
+.file3d-text-sub { font-size: 9px; opacity: .28; }
+.file3d-name {
+  font-size: 10px;
+  color: var(--purple);
+  word-break: break-all;
+  padding: 0 8px;
+  line-height: 1.4;
+}
+.file3d-hint {
+  font-size: 9px;
+  opacity: .3;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.file3d-clear {
+  position: absolute;
+  top: 7px; right: 7px;
+  background: rgba(0,0,0,.75);
+  border: none;
+  color: #fff;
+  border-radius: 50%;
+  width: 22px; height: 22px;
+  font-size: 11px;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  transition: background .2s;
+}
+.file3d-clear:hover { background: rgba(255,60,60,.85); }
+.file3d-upload-zone.has-file .file3d-clear { display: flex; }
+
+/* Preview 3D inline no admin */
+.file3d-preview {
+  display: none;
+  margin-top: 10px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #070707;
+  border: .5px solid rgba(201,166,255,.2);
+  position: relative;
+}
+.file3d-preview.active { display: block; }
+.file3d-preview canvas {
+  width: 100% !important;
+  height: 160px !important;
+  display: block;
+}
+.file3d-preview-label {
+  position: absolute;
+  bottom: 6px; right: 8px;
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: var(--purple);
+  opacity: .5;
+  pointer-events: none;
+}
+.file3d-existing-badge {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(130,80,255,.08);
+  border: .5px solid rgba(201,166,255,.2);
+  border-radius: 8px;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--purple);
+}
+.file3d-existing-badge.active { display: flex; }
+.file3d-existing-remove {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,.3);
+  cursor: pointer;
+  font-size: 13px;
+  transition: color .2s;
+  padding: 2px 4px;
+}
+.file3d-existing-remove:hover { color: var(--red); }
+
 /* Fields */
 .field { margin-bottom: 14px; }
 .field label {
@@ -746,10 +868,37 @@ html, body {
     <div class="extra-photos-section">
       <span class="extra-photos-label">FOTOS EXTRAS (galeria no detalhe)</span>
       <div class="extra-photos-grid" id="extra-photos-grid">
-        <!-- thumbs gerados via JS -->
         <button class="extra-photos-add" id="btn-add-extra-photo" type="button" title="Adicionar foto extra">+</button>
       </div>
       <input type="file" id="extra-file-input" accept="image/*" multiple/>
+    </div>
+
+    <!-- ══ MODELO 3D ══ -->
+    <div class="file3d-section">
+      <span class="file3d-label">MODELO 3D — HOVER PREVIEW (opcional)</span>
+      <div class="file3d-upload-zone" id="file3d-zone">
+        <input type="file" id="file3d-input" accept=".3mf,.glb,.gltf,.obj"/>
+        <span class="file3d-icon">⬡</span>
+        <div class="file3d-text">Arquivo 3D — clique para selecionar</div>
+        <div class="file3d-text-sub">.3MF, .GLB, .GLTF, .OBJ — máx 50MB</div>
+        <div id="file3d-name" class="file3d-name" style="display:none"></div>
+        <button class="file3d-clear" id="file3d-clear" type="button" title="Remover 3D">✕</button>
+      </div>
+      <!-- Badge de modelo já salvo (modo edição) -->
+      <div class="file3d-existing-badge" id="file3d-existing-badge">
+        <span>⬡</span>
+        <span id="file3d-existing-name">modelo.3mf</span>
+        <button class="file3d-existing-remove" id="file3d-existing-remove" type="button" title="Remover modelo 3D">✕</button>
+      </div>
+      <!-- Preview 3D do arquivo selecionado -->
+      <div class="file3d-preview" id="file3d-preview">
+        <canvas id="file3d-canvas"></canvas>
+        <div class="file3d-preview-label">PREVIEW 3D</div>
+      </div>
+      <div class="file3d-hint" style="font-size:9px;opacity:.3;margin-top:6px;line-height:1.5">
+        O modelo aparecerá como preview ao passar o mouse sobre o card no site.<br>
+        Formatos suportados: .3MF (recomendado), .GLB, .GLTF, .OBJ
+      </div>
     </div>
 
     <div class="field">
@@ -793,8 +942,9 @@ html, body {
 
     <input type="hidden" id="f-edit-id"/>
     <input type="hidden" id="f-edit-img-url"/>
-    <!-- URLs das fotos extras (serializado em JSON) -->
     <input type="hidden" id="f-extra-photos"/>
+    <!-- URL do modelo 3D já salvo -->
+    <input type="hidden" id="f-model3d-url"/>
 
     <button class="btn-primary" id="btn-save" type="button">SALVAR PRODUTO</button>
     <button class="btn-secondary" id="btn-cancel-edit" type="button" style="display:none">
