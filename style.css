@@ -6,6 +6,9 @@
    · pd-gallery: galeria multi-foto com nav (NOVO)
    · pd-3d-viewer: visualizador 3D embutido (NOVO)
    · checkout-overlay já estava — mantido intacto
+   v6.1 (patch):
+   · pd-gallery-main: altura maior (380px) + zoom na imagem ao hover
+   · pd-modal: scrollbar transparente
    ═══════════════════════════════════════════ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -885,9 +888,9 @@ html, body {
 .btn-send-order:active { transform: scale(.98); }
 
 /* ═══════════════════════════════════════════
-   PRODUCT DETAIL MODAL  (v6 — NOVO)
-   Bottom-sheet responsivo com galeria multi-foto
-   e visualizador 3D embutido
+   PRODUCT DETAIL MODAL  (v6.1)
+   Ajustes: galeria maior + zoom na imagem
+   + scrollbar transparente
    ═══════════════════════════════════════════ */
 .pd-overlay {
   position: fixed;
@@ -915,7 +918,19 @@ html, body {
   transition: transform .4s cubic-bezier(.25,.46,.45,.94);
   display: flex;
   flex-direction: column;
+  /* ── scrollbar transparente ── */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
+.pd-modal::-webkit-scrollbar { width: 4px; }
+.pd-modal::-webkit-scrollbar-track { background: transparent; }
+.pd-modal::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0);
+  border-radius: 4px;
+  transition: background .3s;
+}
+.pd-modal:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); }
+
 .pd-overlay.open .pd-modal { transform: translateY(0); }
 
 /* handle visual */
@@ -961,15 +976,18 @@ html, body {
   flex-shrink: 0;
 }
 
+/* ── v6.1: galeria maior (380px) ── */
 .pd-gallery-main {
   width: 100%;
-  height: 280px;
+  height: 380px;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   overflow: hidden;
 }
+
+/* ── v6.1: zoom na imagem ao hover ── */
 .pd-gallery-main img {
   max-width: 100%;
   max-height: 100%;
@@ -977,8 +995,19 @@ html, body {
   height: 100%;
   object-fit: contain;
   padding: 12px;
-  transition: opacity .3s;
+  transition: transform .35s cubic-bezier(.25,.46,.45,.94), opacity .3s;
+  cursor: zoom-in;
+  transform-origin: center center;
 }
+.pd-gallery-main img:hover {
+  transform: scale(1.55);
+  cursor: zoom-out;
+}
+/* Quando o usuário clica, mantém zoom via classe .zoomed (opcional JS-free via :active) */
+.pd-gallery-main img:active {
+  transform: scale(1.9);
+}
+
 .pd-gallery-main .pd-emoji-big { font-size: 72px; }
 
 /* botões nav galeria */
@@ -1053,7 +1082,7 @@ html, body {
 .pd-3d-viewer {
   display: none;
   width: 100%;
-  height: 280px;
+  height: 380px;
   position: relative;
   background: #070707;
 }
@@ -1541,7 +1570,7 @@ html, body {
 .product-item-price { color: var(--green); opacity: 1 !important; font-weight: 600; }
 .product-item-actions { display: flex; gap: 4px; flex-shrink: 0; }
 
-/* ── Galeria de fotos extras no admin (NOVO) ── */
+/* ── Galeria de fotos extras no admin ── */
 .extra-photos-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1589,7 +1618,7 @@ html, body {
 }
 .extra-photos-add:hover { border-color: rgba(94,202,138,.4); color: var(--green); }
 
-/* ── Campo arquivo 3D no admin (NOVO) ── */
+/* ── Campo arquivo 3D no admin ── */
 .field-3d-hint {
   font-size: 9px;
   opacity: .35;
@@ -1597,7 +1626,6 @@ html, body {
   line-height: 1.5;
 }
 
-/* ── Upload zona de arquivo 3D ── */
 .file3d-upload-zone {
   border: 1px dashed rgba(201,166,255,.25);
   border-radius: 8px;
@@ -1698,7 +1726,8 @@ html, body {
   .admin-content { grid-template-columns: 1fr; }
   .admin-form-panel { border-right: none; border-bottom: .5px solid rgba(255,255,255,.06); }
   .delivery-options { flex-direction: column; }
-  .pd-gallery-main { height: 220px; }
+  .pd-gallery-main { height: 260px; }
+  .pd-3d-viewer { height: 260px; }
 }
 @media (max-width: 800px) {
   .admin-content { grid-template-columns: 1fr; }
