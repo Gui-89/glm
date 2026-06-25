@@ -1,9 +1,12 @@
 /* ═══════════════════════════════════════════════════════════
    GLM UNIVERSE — main.js  (ES module)
-   v8.2 — fix: stack overflow em 3MF grandes
-   · parse3MFGeometry agora limita triângulos (MAX_TRIS)
-   · usa processamento por chunks assíncrono para não travar
-   · getModel3dExtension robusto (v8.1 mantido)
+   v9.0 — melhorias:
+   · fix 3MF: parser regex tolerante à ordem de atributos XML
+   · busca de produtos no catálogo (live search)
+   · favoritos com localStorage + coração nos cards
+   · botão share produto via WhatsApp no modal de detalhe
+   · skeleton loading nos cards
+   · badge "FAVORITO" dinâmico
    ═══════════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════════
@@ -112,6 +115,52 @@ document.getElementById('btn-c')?.addEventListener('click', () => {
   if (currentTheme === 'creative') return;
   applyTheme('creative');
 });
+
+/* ══════════════════════════════════════════════════════════
+   FAVORITOS
+   ══════════════════════════════════════════════════════════ */
+let favorites = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem('glm_favorites') || '[]');
+  favorites = new Set(saved);
+} catch(_) {}
+
+function saveFavorites() {
+  try { localStorage.setItem('glm_favorites', JSON.stringify([...favorites])); } catch(_) {}
+}
+
+function toggleFavorite(id, btn) {
+  if (favorites.has(id)) {
+    favorites.delete(id);
+    btn.classList.remove('fav-active');
+    btn.title = 'Adicionar aos favoritos';
+  } else {
+    favorites.add(id);
+    btn.classList.add('fav-active');
+    btn.title = 'Remover dos favoritos';
+    // micro-animação
+    btn.classList.add('fav-pop');
+    setTimeout(() => btn.classList.remove('fav-pop'), 400);
+  }
+  saveFavorites();
+}
+
+/* ══════════════════════════════════════════════════════════
+   BUSCA DE PRODUTOS
+   ══════════════════════════════════════════════════════════ */
+let searchQuery = '';
+
+function initSearch() {
+  const input = document.getElementById('catalog-search');
+  if (!input) return;
+  input.addEventListener('input', () => {
+    searchQuery = input.value.trim().toLowerCase();
+    if (window.__lastProducts !== undefined) renderGrid(window.__lastProducts);
+  });
+  // Limpa busca ao trocar tema
+  document.getElementById('btn-d')?.addEventListener('click', () => { input.value = ''; searchQuery = ''; });
+  document.getElementById('btn-c')?.addEventListener('click', () => { input.value = ''; searchQuery = ''; });
+}
 
 /* ══════════════════════════════════════════════════════════
    CARRINHO
@@ -428,7 +477,6 @@ async function pdStart3d(modelUrl) {
   pl.position.set(2, 3, 3); _pd3dScene.add(pl);
 
   const col = currentTheme === 'creative' ? 0xc9a6ff : 0x5eca8a;
-
   _pd3dMesh = await loadModelForViewer(THREE, modelUrl, _pd3dScene, col);
 
   if (_pd3dMesh) {
@@ -452,6 +500,12 @@ async function pdStart3d(modelUrl) {
     _pd3dRaf = requestAnimationFrame(loop3d);
   }
   loop3d();
+}
+
+function shareProduct(prod) {
+  const url  = window.location.href.split('?')[0];
+  const text = `Olha esse produto incrível: *${prod.name}* — ${fmtBRL(prod.price ?? 0)}\n${url}`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
 }
 
 function openProductDetail(prod) {
@@ -481,6 +535,24 @@ function openProductDetail(prod) {
     } else { badgeEl.style.display = 'none'; }
   }
   if (catLabel) catLabel.textContent = isCreative ? '✦ 3D Creative' : '🌿 Essência Decor';
+
+  // botão share no modal
+  const shareBtn = document.getElementById('pd-share-btn');
+  if (shareBtn) {
+    shareBtn.onclick = () => shareProduct(prod);
+    shareBtn.style.display = '';
+  }
+
+  // botão favorito no modal
+  const favBtn = document.getElementById('pd-fav-btn');
+  if (favBtn) {
+    favBtn.classList.toggle('fav-active', favorites.has(prod.id));
+    favBtn.onclick = () => {
+      toggleFavorite(prod.id, favBtn);
+      // re-render para atualizar coração no card
+      if (window.__lastProducts) renderGrid(window.__lastProducts);
+    };
+  }
 
   const thumbsEl = document.getElementById('pd-thumbs');
   if (thumbsEl) {
@@ -667,28 +739,27 @@ function initCanvasHero() {
 
 /* ══════════════════════════════════════════════════════════
    CARREGADOR DE MODELOS 3D
-   v8.2 — fixes:
-   · getModel3dExtension: regex robusto para URLs Cloudinary
-   · parse3MFGeometry: parser iterativo via regex, sem DOM/recursão
-     evita "Maximum call stack size exceeded" em arquivos grandes
-   · MAX_TRIS: limita triângulos para performance no preview
+   v9.0 — fix crítico no parser 3MF:
+   O regex anterior assumia ordem fixa de atributos (x antes de y
+   antes de z), mas XML não garante isso. O novo parser extrai
+   cada atributo independentemente com regex individual.
    ══════════════════════════════════════════════════════════ */
 
-// Limite de triângulos para preview — suficiente para boa aparência
-// sem travar a stack com modelos high-poly
 const MAX_TRIS = 80000;
-
 const _modelCache = new Map();
 
-/**
- * Detecta extensão 3D robusta — funciona com URLs do Cloudinary
- * onde a extensão aparece no meio do path.
- */
 function getModel3dExtension(url) {
   const clean = url.split('?')[0];
   const match = clean.match(/\.(3mf|glb|gltf|obj)(?:[^a-zA-Z0-9]|$)/i);
   if (match) return match[1].toLowerCase();
   return clean.split('/').pop().split('.').pop().toLowerCase();
+}
+
+// Extrai um atributo pelo nome de uma tag XML, independente da ordem
+function extractAttr(tag, name) {
+  const re = new RegExp(`\\b${name}="([^"]*)"`, 'i');
+  const m  = re.exec(tag);
+  return m ? m[1] : '0';
 }
 
 async function loadModelForViewer(THREE, url, scene, color = 0x5eca8a) {
@@ -746,36 +817,48 @@ async function fetch3MFModel(THREE, url, scene, color) {
 }
 
 /**
- * v8.2 — Parser 3MF via regex iterativo.
- * Substitui DOMParser + querySelectorAll que causavam stack overflow
- * em XMLs grandes (muitos nós aninhados).
- * Processa vértices e triângulos em uma única passagem linear.
+ * v9.0 — Parser 3MF corrigido.
+ * Extrai cada atributo (x, y, z / v1, v2, v3) individualmente
+ * com regex dedicado por atributo, eliminando a dependência de
+ * ordem de atributos que causava leitura incorreta de geometria.
  */
 function parse3MFGeometryFast(THREE, xmlStr, scene, color) {
   try {
-    // ── Extrai vértices via regex ──────────────────────────
-    const vertRe  = /<vertex\s[^>]*x="([^"]+)"[^>]*y="([^"]+)"[^>]*z="([^"]+)"/g;
-    const verts   = [];
+    // ── Extrai tags <vertex ...> completas ────────────────
+    const vertTagRe = /<vertex\s[^\/\n>]+\/?\s*>/gi;
+    const verts     = [];
     let m;
-    while ((m = vertRe.exec(xmlStr)) !== null) {
-      verts.push(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
+
+    while ((m = vertTagRe.exec(xmlStr)) !== null) {
+      const tag = m[0];
+      verts.push(
+        parseFloat(extractAttr(tag, 'x')),
+        parseFloat(extractAttr(tag, 'y')),
+        parseFloat(extractAttr(tag, 'z'))
+      );
     }
 
-    // ── Extrai triângulos via regex ────────────────────────
-    const triRe = /<triangle\s[^>]*v1="([^"]+)"[^>]*v2="([^"]+)"[^>]*v3="([^"]+)"/g;
-    const idxArr = [];
-    let triCount = 0;
-    while ((m = triRe.exec(xmlStr)) !== null) {
-      if (triCount >= MAX_TRIS) break; // limita para evitar lentidão
-      idxArr.push(parseInt(m[1]), parseInt(m[2]), parseInt(m[3]));
+    // ── Extrai tags <triangle ...> completas ──────────────
+    const triTagRe = /<triangle\s[^\/\n>]+\/?\s*>/gi;
+    const idxArr   = [];
+    let triCount   = 0;
+
+    while ((m = triTagRe.exec(xmlStr)) !== null) {
+      if (triCount >= MAX_TRIS) break;
+      const tag = m[0];
+      idxArr.push(
+        parseInt(extractAttr(tag, 'v1')),
+        parseInt(extractAttr(tag, 'v2')),
+        parseInt(extractAttr(tag, 'v3'))
+      );
       triCount++;
     }
 
     if (!verts.length || !idxArr.length) {
-      throw new Error('3MF: nenhuma geometria encontrada pelo parser rápido');
+      throw new Error('3MF: nenhuma geometria encontrada');
     }
 
-    console.log(`[3MF] ${verts.length / 3} vértices, ${triCount} triângulos carregados`);
+    console.log(`[3MF] ✓ ${verts.length / 3} vértices, ${triCount} triângulos`);
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
@@ -1017,6 +1100,22 @@ async function initThreePreview() {
 }
 
 /* ══════════════════════════════════════════════════════════
+   SKELETON LOADING — placeholder enquanto carrega grid
+   ══════════════════════════════════════════════════════════ */
+function showSkeletons(count = 6) {
+  const grid = document.getElementById('grid');
+  if (!grid) return;
+  grid.style.display = 'grid';
+  grid.innerHTML = Array.from({ length: count }, () => `
+    <div class="card-skeleton">
+      <div class="skel-img"></div>
+      <div class="skel-line skel-name"></div>
+      <div class="skel-line skel-price"></div>
+      <div class="skel-line skel-btn"></div>
+    </div>`).join('');
+}
+
+/* ══════════════════════════════════════════════════════════
    CARDS
    ══════════════════════════════════════════════════════════ */
 function makeCard(prod, idx) {
@@ -1033,11 +1132,15 @@ function makeCard(prod, idx) {
     ? `<span class="card-badge-3d">⬡ 3D</span>`
     : '';
 
+  // botão favorito
+  const isFav  = favorites.has(prod.id);
+  const favBtn = `<button type="button" class="card-fav-btn${isFav ? ' fav-active' : ''}" title="${isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}">♡</button>`;
+
   const hasVars  = prod.variations?.length > 0;
   const btnLabel = hasVars ? '+ VER OPÇÕES' : '+ ADICIONAR';
 
   card.innerHTML = `
-    <div class="${T.ci}">${img}${badge}${badge3d}</div>
+    <div class="${T.ci}">${img}${badge}${badge3d}${favBtn}</div>
     <div class="card-info">
       <div class="${T.name}">${prod.name}</div>
       <div class="${T.price}">${fmtBRL(prod.price ?? 0)}</div>
@@ -1045,8 +1148,16 @@ function makeCard(prod, idx) {
     </div>
     <button type="button" class="card-add-btn">${btnLabel}</button>`;
 
+  // favorito
+  const favEl = card.querySelector('.card-fav-btn');
+  favEl.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleFavorite(prod.id, favEl);
+  });
+
   card.addEventListener('click', e => {
-    if (e.target.classList.contains('card-add-btn')) return;
+    if (e.target.classList.contains('card-add-btn') ||
+        e.target.classList.contains('card-fav-btn')) return;
     openProductDetail(prod);
   });
 
@@ -1072,11 +1183,20 @@ function renderGrid(products) {
   const _all = products || [];
   window.__lastProducts = _all;
 
-  const filtered = _all.filter(p =>
+  let filtered = _all.filter(p =>
     currentTheme === 'creative'
       ? p.category === 'creative'
       : p.category === 'decor' || !p.category
   );
+
+  // aplica busca
+  if (searchQuery) {
+    filtered = filtered.filter(p =>
+      p.name?.toLowerCase().includes(searchQuery) ||
+      p.description?.toLowerCase().includes(searchQuery) ||
+      p.badge?.toLowerCase().includes(searchQuery)
+    );
+  }
 
   const grid    = document.getElementById('grid');
   const loading = document.getElementById('loading-state');
@@ -1085,7 +1205,14 @@ function renderGrid(products) {
   if (loading) loading.style.display = 'none';
   if (!filtered.length) {
     if (grid)  grid.style.display  = 'none';
-    if (empty) empty.style.display = 'block';
+    if (empty) {
+      empty.style.display = 'block';
+      // mensagem diferente para busca sem resultado
+      const p = empty.querySelector('p');
+      if (p) p.textContent = searchQuery
+        ? `🔍 Nenhum produto encontrado para "${searchQuery}"`
+        : '🗂️ Nenhum produto cadastrado ainda.';
+    }
     return;
   }
   if (empty) empty.style.display = 'none';
@@ -1109,7 +1236,6 @@ const DEMO = [
 ];
 
 let db = null;
-let firestoreReady = false;
 let unsub = null;
 let fallbackTimer = null;
 
@@ -1122,22 +1248,24 @@ async function initFirebase() {
     ]);
     const app = initializeApp(FIREBASE_CONFIG);
     db = getFirestore(app);
-    firestoreReady = true;
   } catch (e) {
     console.warn('Firebase não inicializado — usando dados demo:', e.message);
-    db = null; firestoreReady = false;
+    db = null;
   }
 }
 
 async function subscribeFirestore() {
   if (unsub) { unsub(); unsub = null; }
   clearTimeout(fallbackTimer);
+
   const loading = document.getElementById('loading-state');
   const grid    = document.getElementById('grid');
   const empty   = document.getElementById('empty-state');
-  if (loading) loading.style.display = 'block';
-  if (grid)    grid.style.display    = 'none';
+  if (loading) loading.style.display = 'none';
   if (empty)   empty.style.display   = 'none';
+
+  // mostra skeletons enquanto carrega
+  showSkeletons(6);
 
   if (!db) { setTimeout(() => renderGrid(DEMO), 300); return; }
 
@@ -1193,6 +1321,7 @@ document.querySelectorAll('input[name="delivery"]').forEach(radio => {
 applyTheme('decor');
 initCanvasHero();
 initThreePreview();
+initSearch();
 renderCart();
 updateCartFab();
 initFirebase().then(() => subscribeFirestore());
